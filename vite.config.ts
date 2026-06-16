@@ -26,10 +26,10 @@ export default defineConfig(({ mode }) => {
                     theme_color: "#f8fafc",
                     background_color: "#f8fafc",
                     display: "standalone",
-                    start_url: "/",
+                    start_url: base,
                     icons: [
                         {
-                            src: "/lexora.svg",
+                            src: `${base}lexora.svg`,
                             sizes: "192x192",
                             type: "image/svg+xml",
                             purpose: "any maskable"

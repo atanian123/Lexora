@@ -204,7 +204,7 @@ export default function App() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
-            <img src="/lexora.svg" alt="" className="h-11 w-11 rounded-xl" />
+            <img src={`${import.meta.env.BASE_URL}lexora.svg`} alt="" className="h-11 w-11 rounded-xl" />
             <div>
               <h1 className="text-2xl font-bold tracking-normal">Lexora</h1>
               <p className="text-sm text-slate-600">{t("app.tagline")}</p>
@@ -436,7 +436,7 @@ function FirstRun({ onCreated }: { onCreated: (profile: Profile) => void }) {
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
       <form className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-6 shadow-soft" onSubmit={handleSubmit}>
         <div className="mb-6 flex items-center gap-3">
-          <img src="/lexora.svg" alt="" className="h-12 w-12 rounded-xl" />
+          <img src={`${import.meta.env.BASE_URL}lexora.svg`} alt="" className="h-12 w-12 rounded-xl" />
           <div>
             <h1 className="text-2xl font-bold">{t("profile.firstRunTitle")}</h1>
             <p className="text-sm text-slate-600">{t("profile.firstRunBody")}</p>
