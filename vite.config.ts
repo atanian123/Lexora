@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
     return {
         base,
         build: {
-            outDir: isGitHubPages ? "github-build" : "dist",
+            outDir: "docs",
             emptyOutDir: true
         },
         plugins: [
