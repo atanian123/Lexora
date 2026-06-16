@@ -1,8 +1,8 @@
-<svg width="192" height="192" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="192" height="192" rx="42" fill="#0F766E"/>
-  <path d="M48 47C48 39.268 54.268 33 62 33H141C148.18 33 154 38.82 154 46V143C154 150.18 148.18 156 141 156H62C54.268 156 48 149.732 48 142V47Z" fill="#F8FAFC"/>
-  <path d="M66 58H132" stroke="#0F766E" stroke-width="10" stroke-linecap="round"/>
-  <path d="M66 84H126" stroke="#14B8A6" stroke-width="10" stroke-linecap="round"/>
-  <path d="M66 110H112" stroke="#F59E0B" stroke-width="10" stroke-linecap="round"/>
-  <path d="M50 142H140" stroke="#0F766E" stroke-width="12" stroke-linecap="round"/>
+<svg width="512" height="512" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="60" height="60" rx="14" fill="#4F6EF7" />
+  <g transform="translate(30, 35)">
+    <rect x="-18" y="-18" width="36" height="28" rx="7" fill="rgba(255,255,255,0.25)" />
+    <path d="M-4 10 L-10 20 L4 10" fill="rgba(255,255,255,0.25)" />
+    <text x="0" y="3" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="500" fill="white" text-anchor="middle">Lx</text>
+  </g>
 </svg>

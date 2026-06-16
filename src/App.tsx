@@ -195,16 +195,12 @@ export default function App() {
     return <FirstRun onCreated={handleProfileCreated} />;
   }
 
-  if (!activeSetup) {
-    return <SetupRequired profile={activeProfile} onCreated={() => refreshAll(activeProfile.id)} />;
-  }
-
   return (
     <div className="min-h-screen bg-slate-50 text-ink">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
-            <img src={`${import.meta.env.BASE_URL}lexora.svg`} alt="" className="h-11 w-11 rounded-xl" />
+            <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-11 w-11" />
             <div>
               <h1 className="text-2xl font-bold tracking-normal">Lexora</h1>
               <p className="text-sm text-slate-600">{t("app.tagline")}</p>
@@ -233,7 +229,7 @@ export default function App() {
               </HeaderSelect>
               <LearningSetupSelect
                 label={t("setup.label")}
-                value={activeSetup.id}
+                value={activeSetup?.id ?? ""}
                 setups={learningSetups}
                 locale={activeProfile.uiLanguage}
                 onChange={async (setupId) => {
@@ -252,13 +248,16 @@ export default function App() {
           <div className="flex min-h-14 items-center justify-between sm:hidden">
             <div className="min-w-0">
               <span className="block text-sm font-bold text-slate-700">{currentNavLabel(view, t)}</span>
-              <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate-500">
-                <FlagIcon code={activeSetup.targetLanguage} />
-                <span className="truncate">{languageOptionLabel(activeSetup.targetLanguage, activeProfile.uiLanguage)}</span>
-                <span className="text-slate-400">·</span>
-                <FlagIcon code={activeSetup.baseLanguage} />
-                <span className="truncate">{setupBaseContext(activeSetup.baseLanguage, activeProfile.uiLanguage, t("setup.baseShort"))}</span>
-              </span>
+              {activeSetup ? (
+                <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate-500">
+                  <FlagIcon code={activeSetup.targetLanguage} />
+                  <span className="truncate">{languageOptionLabel(activeSetup.targetLanguage, activeProfile.uiLanguage)}</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="truncate">{t("setup.baseShort")}:</span>
+                  <FlagIcon code={activeSetup.baseLanguage} />
+                  <span className="truncate">{languageOptionLabel(activeSetup.baseLanguage, activeProfile.uiLanguage)}</span>
+                </span>
+              ) : null}
             </div>
             <button
               className="app-button app-button-secondary h-10 w-10 p-0"
@@ -293,7 +292,7 @@ export default function App() {
               </HeaderSelect>
               <LearningSetupSelect
                 label={t("setup.label")}
-                value={activeSetup.id}
+                value={activeSetup?.id ?? ""}
                 setups={learningSetups}
                 locale={activeProfile.uiLanguage}
                 onChange={async (setupId) => {
@@ -345,13 +344,16 @@ export default function App() {
       </nav>
 
       {status ? (
-        <div className="border-b border-teal-200 bg-teal-50 px-4 py-2 text-center text-sm font-semibold text-teal-900">
+        <div className="border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-center text-sm font-semibold text-indigo-900">
           {status}
         </div>
       ) : null}
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        {view === "study" ? (
+        {!activeSetup && view !== "settings" ? (
+          <SetupRequired profile={activeProfile} onCreated={() => refreshAll(activeProfile.id)} />
+        ) : null}
+        {view === "study" && activeSetup ? (
           <StudyView
             profile={activeProfile}
             setup={activeSetup}
@@ -362,7 +364,7 @@ export default function App() {
             onRefresh={refreshAll}
           />
         ) : null}
-        {view === "library" ? (
+        {view === "library" && activeSetup ? (
           <LibraryView
             profile={activeProfile}
             setup={activeSetup}
@@ -374,7 +376,7 @@ export default function App() {
             onStatus={setStatus}
           />
         ) : null}
-        {view === "decks" ? (
+        {view === "decks" && activeSetup ? (
           <DecksView
             profile={activeProfile}
             setup={activeSetup}
@@ -408,9 +410,6 @@ function FirstRun({ onCreated }: { onCreated: (profile: Profile) => void }) {
   const { t, i18n } = useTranslation();
   const [name, setName] = useState("");
   const [uiLanguage, setUiLanguage] = useState<LanguageCode>("en");
-  const [setupName, setSetupName] = useState("");
-  const [baseLanguage, setBaseLanguage] = useState<LanguageCode>("de");
-  const [targetLanguage, setTargetLanguage] = useState<LanguageCode>("es");
 
   useEffect(() => {
     void i18n.changeLanguage(uiLanguage);
@@ -423,12 +422,6 @@ function FirstRun({ onCreated }: { onCreated: (profile: Profile) => void }) {
     }
 
     const profile = await createProfile(name, uiLanguage);
-    await createLearningSetup(
-      profile.id,
-      setupName || setupNamePlaceholder(baseLanguage, targetLanguage, i18n.language, t),
-      baseLanguage,
-      targetLanguage
-    );
     onCreated(profile);
   }
 
@@ -436,7 +429,7 @@ function FirstRun({ onCreated }: { onCreated: (profile: Profile) => void }) {
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
       <form className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-6 shadow-soft" onSubmit={handleSubmit}>
         <div className="mb-6 flex items-center gap-3">
-          <img src={`${import.meta.env.BASE_URL}lexora.svg`} alt="" className="h-12 w-12 rounded-xl" />
+          <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-12 w-12" />
           <div>
             <h1 className="text-2xl font-bold">{t("profile.firstRunTitle")}</h1>
             <p className="text-sm text-slate-600">{t("profile.firstRunBody")}</p>
@@ -447,39 +440,7 @@ function FirstRun({ onCreated }: { onCreated: (profile: Profile) => void }) {
           <Label text={t("profile.name")}>
             <input className="app-input" value={name} onChange={(event) => setName(event.target.value)} autoFocus required />
           </Label>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <LanguageSelect label={t("profile.uiLanguage")} value={uiLanguage} onChange={setUiLanguage} />
-            <LanguageSelect
-              label={t("setup.baseLanguage")}
-              value={baseLanguage}
-              exclude={[targetLanguage]}
-              onChange={(value) => {
-                setBaseLanguage(value);
-                if (targetLanguage === value) {
-                  setTargetLanguage(firstAvailableLanguage(value));
-                }
-              }}
-            />
-            <LanguageSelect
-              label={t("setup.targetLanguage")}
-              value={targetLanguage}
-              exclude={[baseLanguage]}
-              onChange={(value) => {
-                setTargetLanguage(value);
-                if (baseLanguage === value) {
-                  setBaseLanguage(firstAvailableLanguage(value));
-                }
-              }}
-            />
-          </div>
-          <Label text={t("setup.name")}>
-            <input
-              className="app-input"
-              value={setupName}
-              onChange={(event) => setSetupName(event.target.value)}
-              placeholder={setupNamePlaceholder(baseLanguage, targetLanguage, i18n.language, t)}
-            />
-          </Label>
+          <LanguageSelect label={t("profile.uiLanguage")} value={uiLanguage} onChange={setUiLanguage} />
           <button className="app-button app-button-primary" type="submit">
             <UserRound size={18} />
             {t("common.create")}
@@ -508,7 +469,7 @@ function SetupRequired({ profile, onCreated }: { profile: Profile; onCreated: ()
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
+    <section className="flex items-center justify-center py-10">
       <form className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-6 shadow-soft" onSubmit={handleSubmit}>
         <div className="mb-6">
           <h1 className="text-2xl font-bold">{t("setup.firstRunTitle")}</h1>
@@ -553,7 +514,7 @@ function SetupRequired({ profile, onCreated }: { profile: Profile; onCreated: ()
           </button>
         </div>
       </form>
-    </main>
+    </section>
   );
 }
 
@@ -1377,7 +1338,7 @@ function SettingsView({
   profile: Profile;
   profiles: Profile[];
   learningSetups: LearningSetup[];
-  activeSetup: LearningSetup;
+  activeSetup: LearningSetup | null;
   decks: Deck[];
   words: WordEntry[];
   subsets: CustomSubset[];
@@ -1388,17 +1349,19 @@ function SettingsView({
   const { t, i18n } = useTranslation();
   const [newProfileName, setNewProfileName] = useState("");
   const [setupName, setSetupName] = useState("");
-  const [setupBaseLanguage, setSetupBaseLanguage] = useState<LanguageCode>(activeSetup.baseLanguage);
-  const [setupTargetLanguage, setSetupTargetLanguage] = useState<LanguageCode>(activeSetup.targetLanguage);
+  const [setupBaseLanguage, setSetupBaseLanguage] = useState<LanguageCode>(activeSetup?.baseLanguage ?? "de");
+  const [setupTargetLanguage, setSetupTargetLanguage] = useState<LanguageCode>(activeSetup?.targetLanguage ?? "es");
   const [setupWordCounts, setSetupWordCounts] = useState<Record<string, number>>({});
   const [editingSetupLanguagesId, setEditingSetupLanguagesId] = useState<string | null>(null);
-  const [editingBaseLanguage, setEditingBaseLanguage] = useState<LanguageCode>(activeSetup.baseLanguage);
-  const [editingTargetLanguage, setEditingTargetLanguage] = useState<LanguageCode>(activeSetup.targetLanguage);
+  const [editingBaseLanguage, setEditingBaseLanguage] = useState<LanguageCode>(activeSetup?.baseLanguage ?? "de");
+  const [editingTargetLanguage, setEditingTargetLanguage] = useState<LanguageCode>(activeSetup?.targetLanguage ?? "es");
 
   useEffect(() => {
-    setSetupBaseLanguage(activeSetup.baseLanguage);
-    setSetupTargetLanguage(activeSetup.targetLanguage);
-  }, [activeSetup.baseLanguage, activeSetup.targetLanguage]);
+    if (activeSetup) {
+      setSetupBaseLanguage(activeSetup.baseLanguage);
+      setSetupTargetLanguage(activeSetup.targetLanguage);
+    }
+  }, [activeSetup?.baseLanguage, activeSetup?.targetLanguage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1577,8 +1540,9 @@ function SettingsView({
                     <span className="truncate">{learningSetupDisplayName(setup, i18n.language)}</span>
                   </p>
                   <p className="mt-1 flex items-center gap-1 text-sm text-slate-600">
+                    <span>{t("setup.baseShort")}:</span>
                     <FlagIcon code={setup.baseLanguage} />
-                    <span>{setupBaseContext(setup.baseLanguage, i18n.language, t("setup.baseShort"))}</span>
+                    <span>{languageOptionLabel(setup.baseLanguage, i18n.language)}</span>
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -1863,7 +1827,7 @@ function LanguageSelect({
             <button
               key={code}
               className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 ${
-                code === value ? "bg-teal-50 font-bold text-teal-900" : "text-slate-800"
+                code === value ? "bg-indigo-50 font-bold text-indigo-900" : "text-slate-800"
               }`}
               type="button"
               role="option"
@@ -1934,8 +1898,10 @@ function LearningSetupSelect({
           <span className="min-w-0">
             <span className="block truncate">{selected ? learningSetupDisplayName(selected, locale) : ""}</span>
             {selected ? (
-              <span className="block truncate text-xs font-semibold text-slate-500">
-                {setupBaseContext(selected.baseLanguage, locale, t("setup.baseShort"))}
+              <span className="flex items-center gap-1 truncate text-xs font-semibold text-slate-500">
+                <span>{t("setup.baseShort")}:</span>
+                <FlagIcon code={selected.baseLanguage} />
+                <span>{languageOptionLabel(selected.baseLanguage, locale)}</span>
               </span>
             ) : null}
           </span>
@@ -1951,7 +1917,7 @@ function LearningSetupSelect({
             <button
               key={setup.id}
               className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 ${
-                setup.id === value ? "bg-teal-50 font-bold text-teal-900" : "text-slate-800"
+                setup.id === value ? "bg-indigo-50 font-bold text-indigo-900" : "text-slate-800"
               }`}
               type="button"
               role="option"
@@ -1965,8 +1931,9 @@ function LearningSetupSelect({
               <span className="min-w-0">
                 <span className="block truncate">{learningSetupDisplayName(setup, locale)}</span>
                 <span className="flex items-center gap-1 text-xs font-normal text-slate-500">
+                  <span>{t("setup.baseShort")}:</span>
                   <FlagIcon code={setup.baseLanguage} />
-                  {setupBaseContext(setup.baseLanguage, locale, t("setup.baseShort"))}
+                  <span>{languageOptionLabel(setup.baseLanguage, locale)}</span>
                 </span>
               </span>
             </button>
@@ -2005,7 +1972,7 @@ function NavButton({
     <button
       className={`flex min-h-11 w-full items-center gap-2 rounded-lg border px-3 text-sm font-bold sm:min-h-12 sm:w-auto sm:rounded-none sm:border-x-0 sm:border-t-0 sm:border-b-2 ${
         active
-          ? "border-teal-700 bg-teal-50 text-teal-800 sm:bg-transparent"
+          ? "border-indigo-700 bg-indigo-50 text-indigo-800 sm:bg-transparent"
           : "border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-950 sm:border-transparent sm:hover:bg-transparent"
       }`}
       onClick={onClick}

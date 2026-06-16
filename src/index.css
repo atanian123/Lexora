@@ -68,12 +68,12 @@ textarea:focus-visible {
 }
 
 .app-button-primary {
-  background: #0f766e;
+  background: #4f6ef7;
   color: #ffffff;
 }
 
 .app-button-primary:hover {
-  background: #115e59;
+  background: #3b52ba;
 }
 
 .app-button-secondary {

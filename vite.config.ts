@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
             react(),
             VitePWA({
                 registerType: "autoUpdate",
-                includeAssets: ["lexora.svg"],
+                includeAssets: ["lexora.svg", "favicon.svg"],
                 manifest: {
                     name: "Lexora",
                     short_name: "Lexora",
@@ -30,7 +30,7 @@ export default defineConfig(({ mode }) => {
                     icons: [
                         {
                             src: `${base}lexora.svg`,
-                            sizes: "192x192",
+                            sizes: "192x192 512x512",
                             type: "image/svg+xml",
                             purpose: "any maskable"
                         }
