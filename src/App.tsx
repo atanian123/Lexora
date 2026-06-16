@@ -983,10 +983,24 @@ function LibraryView({
       <form className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-soft" onSubmit={saveWord}>
         <h2 className="text-lg font-bold">{t("library.addWord")}</h2>
         <div className="grid gap-4 lg:grid-cols-[1fr_1fr_220px]">
-          <Label text={t("library.targetText")}>
+          <Label
+            text={
+              <span className="flex items-center gap-1">
+                <FlagIcon code={setup.targetLanguage} />
+                {t("library.targetText")}
+              </span>
+            }
+          >
             <input className="app-input" value={form.targetText} onChange={(event) => setForm({ ...form, targetText: event.target.value })} required />
           </Label>
-          <Label text={t("library.manualTranslation")}>
+          <Label
+            text={
+              <span className="flex items-center gap-1">
+                <FlagIcon code={setup.baseLanguage} />
+                {t("library.manualTranslation")}
+              </span>
+            }
+          >
             <input
               className="app-input"
               value={form.translations}
@@ -1847,7 +1861,7 @@ function LanguageSelect({
   );
 }
 
-function Label({ text, children }: { text: string; children: React.ReactNode }) {
+function Label({ text, children }: { text: React.ReactNode; children: React.ReactNode }) {
   return (
     <label className="grid gap-1 text-sm font-semibold text-slate-700">
       <span>{text}</span>
