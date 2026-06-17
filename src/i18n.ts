@@ -138,6 +138,12 @@ const en = {
     usage: "Translation usage",
     requestsRemaining: "requests remaining"
   },
+  connection: {
+    online: "Online",
+    offline: "Offline",
+    onlineDetail: "Translation suggestions are available when the provider can be reached.",
+    offlineDetail: "Offline: manual translations remain available."
+  },
   status: {
     offline: "Offline: manual translations remain available.",
     limitReached: "Daily translation limit reached. Manual entry remains available.",
@@ -272,6 +278,12 @@ const de = {
     resetWarning: "Dies entfernt alle Profile, Stapel, Wörter, Auswahlen und Lernverläufe aus diesem Browser.",
     usage: "Übersetzungsnutzung",
     requestsRemaining: "Anfragen übrig"
+  },
+  connection: {
+    online: "Online",
+    offline: "Offline",
+    onlineDetail: "Übersetzungsvorschläge sind verfügbar, wenn der Anbieter erreichbar ist.",
+    offlineDetail: "Offline: Manuelle Übersetzungen bleiben verfügbar."
   },
   status: {
     offline: "Offline: Manuelle Übersetzungen bleiben verfügbar.",
@@ -408,6 +420,12 @@ const fr = {
     usage: "Utilisation de la traduction",
     requestsRemaining: "requêtes restantes"
   },
+  connection: {
+    online: "En ligne",
+    offline: "Hors ligne",
+    onlineDetail: "Les suggestions de traduction sont disponibles si le fournisseur est joignable.",
+    offlineDetail: "Hors ligne : les traductions manuelles restent disponibles."
+  },
   status: {
     offline: "Hors ligne : les traductions manuelles restent disponibles.",
     limitReached: "Limite quotidienne de traduction atteinte. La saisie manuelle reste disponible.",
@@ -542,6 +560,12 @@ const it = {
     resetWarning: "Rimuove tutti i profili, mazzi, parole, selezioni e cronologia da questo browser.",
     usage: "Uso traduzioni",
     requestsRemaining: "richieste rimanenti"
+  },
+  connection: {
+    online: "Online",
+    offline: "Offline",
+    onlineDetail: "I suggerimenti di traduzione sono disponibili quando il provider è raggiungibile.",
+    offlineDetail: "Offline: le traduzioni manuali restano disponibili."
   },
   status: {
     offline: "Offline: le traduzioni manuali restano disponibili.",
@@ -678,6 +702,12 @@ const es = {
     usage: "Uso de traducción",
     requestsRemaining: "solicitudes restantes"
   },
+  connection: {
+    online: "En línea",
+    offline: "Sin conexión",
+    onlineDetail: "Las sugerencias de traducción están disponibles si el proveedor responde.",
+    offlineDetail: "Sin conexión: las traducciones manuales siguen disponibles."
+  },
   status: {
     offline: "Sin conexión: las traducciones manuales siguen disponibles.",
     limitReached: "Límite diario de traducción alcanzado. La entrada manual sigue disponible.",
@@ -813,6 +843,12 @@ const pt = {
     usage: "Uso de tradução",
     requestsRemaining: "pedidos restantes"
   },
+  connection: {
+    online: "Online",
+    offline: "Offline",
+    onlineDetail: "As sugestões de tradução estão disponíveis quando o fornecedor responde.",
+    offlineDetail: "Offline: as traduções manuais continuam disponíveis."
+  },
   status: {
     offline: "Offline: as traduções manuais continuam disponíveis.",
     limitReached: "Limite diário de tradução atingido. A entrada manual continua disponível.",
@@ -947,6 +983,12 @@ const ru = {
     resetWarning: "Это удалит все профили, колоды, слова, наборы и историю повторений из этого браузера.",
     usage: "Использование перевода",
     requestsRemaining: "запросов осталось"
+  },
+  connection: {
+    online: "Онлайн",
+    offline: "Офлайн",
+    onlineDetail: "Подсказки перевода доступны, когда поставщик отвечает.",
+    offlineDetail: "Офлайн: ручные переводы остаются доступны."
   },
   status: {
     offline: "Офлайн: ручные переводы остаются доступны.",

@@ -251,7 +251,7 @@ interface TranslationResult {
 
 | Concern | Choice | Rationale |
 |---------|--------|-----------|
-| Framework | **React 18 + Vite + TypeScript** | Mature PWA tooling, large ecosystem, strong typing |
+| Framework | **React 19 + Vite + TypeScript** | Mature PWA tooling, large ecosystem, strong typing |
 | PWA | **vite-plugin-pwa** (Workbox) | Service worker + manifest generation, offline caching |
 | Styling | **Tailwind CSS** | Mobile-first, no runtime overhead |
 | Local DB | **Dexie.js** (IndexedDB) | Offline-first, TypeScript-friendly, Dexie Cloud-ready |
@@ -351,7 +351,7 @@ Phase 1 targets the complete scope defined in this document. Implementation shou
 
 | Subphase | Goal | Included scope |
 |----------|------|----------------|
-| 1. Foundation | Establish the installable local-first application shell. | React 18 + Vite + TypeScript, Tailwind CSS, PWA manifest/service worker, i18next setup, routing/layout, accessibility baseline. |
+| 1. Foundation | Establish the installable local-first application shell. | React 19 + Vite + TypeScript, Tailwind CSS, PWA manifest/service worker, i18next setup, routing/layout, accessibility baseline. |
 | 2. Local data model | Implement durable offline storage and profile/setup boundaries. | Dexie schema/versioning, first-launch profile creation, profile switcher, app-language preference, learning setup CRUD, active setup selection, default deck creation per setup, Dexie Cloud-ready identifiers. |
 | 3. Library management | Build the core vocabulary management workflow. | Setup-scoped deck CRUD, saved custom subset CRUD, add/edit/delete words and phrases, multiple accepted translations, notes, search/filter, export JSON/CSV, full local reset. |
 | 4. Translation layer | Add provider-based translation suggestions with graceful offline fallback. | Translation provider interface, MyMemory provider, local daily request counter shared across profiles, usage indicator, manual translation path. |

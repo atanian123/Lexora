@@ -109,6 +109,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
 
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? null;
   const activeSetup =
@@ -116,6 +117,18 @@ export default function App() {
 
   useEffect(() => {
     void refreshAll();
+  }, []);
+
+  useEffect(() => {
+    const updateOnlineState = () => setIsOnline(navigator.onLine);
+
+    window.addEventListener("online", updateOnlineState);
+    window.addEventListener("offline", updateOnlineState);
+
+    return () => {
+      window.removeEventListener("online", updateOnlineState);
+      window.removeEventListener("offline", updateOnlineState);
+    };
   }, []);
 
   useEffect(() => {
@@ -238,7 +251,10 @@ export default function App() {
                 }}
               />
             </div>
-            <UsageBadge usage={usage} />
+            <div className="grid gap-2">
+              <UsageBadge usage={usage} />
+              <ConnectionBadge online={isOnline} />
+            </div>
           </div>
         </div>
       </header>
@@ -302,6 +318,7 @@ export default function App() {
                 }}
               />
               <UsageBadge usage={usage} />
+              <ConnectionBadge online={isOnline} />
             </div>
             <NavButton
               icon={<BookOpen size={18} />}
@@ -1683,6 +1700,26 @@ function UsageBadge({ usage }: { usage: TranslationUsage | null }) {
   );
 }
 
+function ConnectionBadge({ online }: { online: boolean }) {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      className={`min-w-52 rounded-lg border px-3 py-2 text-sm font-semibold ${
+        online ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-rose-200 bg-rose-50 text-rose-950"
+      }`}
+      role="status"
+      aria-live="polite"
+      title={online ? t("connection.onlineDetail") : t("connection.offlineDetail")}
+    >
+      <span className="flex items-center gap-2">
+        <span className={`h-2.5 w-2.5 rounded-full ${online ? "bg-emerald-500" : "bg-rose-500"}`} aria-hidden="true" />
+        {online ? t("connection.online") : t("connection.offline")}
+      </span>
+    </div>
+  );
+}
+
 function ScopeSelect({
   scope,
   setScope,
@@ -1814,6 +1851,50 @@ function LanguageSelect({
   const excluded = new Set(exclude);
   const availableCodes = languageCodes.filter((code) => !excluded.has(code));
   const selectedLabel = languageOptionLabel(value, i18n.language);
+  const selectedIndex = Math.max(
+    0,
+    availableCodes.findIndex((code) => code === value)
+  );
+
+  function selectByIndex(index: number) {
+    const next = availableCodes[index];
+    if (next) {
+      onChange(next);
+    }
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setOpen((current) => !current);
+      return;
+    }
+
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      return;
+    }
+
+    event.preventDefault();
+    setOpen(true);
+
+    if (event.key === "Home") {
+      selectByIndex(0);
+      return;
+    }
+
+    if (event.key === "End") {
+      selectByIndex(availableCodes.length - 1);
+      return;
+    }
+
+    const offset = event.key === "ArrowDown" ? 1 : -1;
+    selectByIndex((selectedIndex + offset + availableCodes.length) % availableCodes.length);
+  }
 
   return (
     <div className="relative" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
@@ -1825,6 +1906,7 @@ function LanguageSelect({
         aria-expanded={open}
         title={selectedLabel}
         onClick={() => setOpen((current) => !current)}
+        onKeyDown={handleKeyDown}
       >
         <span className="flex min-w-0 items-center gap-2">
           <FlagIcon code={value} />
@@ -1895,6 +1977,50 @@ function LearningSetupSelect({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const selected = setups.find((setup) => setup.id === value) ?? setups[0];
+  const selectedIndex = Math.max(
+    0,
+    setups.findIndex((setup) => setup.id === selected?.id)
+  );
+
+  function selectByIndex(index: number) {
+    const next = setups[index];
+    if (next) {
+      void onChange(next.id);
+    }
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setOpen((current) => !current);
+      return;
+    }
+
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      return;
+    }
+
+    event.preventDefault();
+    setOpen(true);
+
+    if (event.key === "Home") {
+      selectByIndex(0);
+      return;
+    }
+
+    if (event.key === "End") {
+      selectByIndex(setups.length - 1);
+      return;
+    }
+
+    const offset = event.key === "ArrowDown" ? 1 : -1;
+    selectByIndex((selectedIndex + offset + setups.length) % setups.length);
+  }
 
   return (
     <div className="relative" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
@@ -1906,6 +2032,7 @@ function LearningSetupSelect({
         aria-expanded={open}
         title={selected ? `${learningSetupDisplayName(selected, locale)} · ${setupBaseContext(selected.baseLanguage, locale, t("setup.baseShort"))}` : label}
         onClick={() => setOpen((current) => !current)}
+        onKeyDown={handleKeyDown}
       >
         <span className="flex min-w-0 items-center gap-2">
           {selected ? <FlagIcon code={selected.targetLanguage} /> : null}
