@@ -137,8 +137,10 @@ export default function App() {
     }
   }, [activeProfile, i18n]);
 
-  async function refreshAll(nextActiveId = activeProfileId) {
-    setLoading(true);
+  async function refreshAll(nextActiveId = activeProfileId, showLoading = loading) {
+    if (showLoading) {
+      setLoading(true);
+    }
     const loadedProfiles = await db.profiles.orderBy("updatedAt").reverse().toArray();
     let selectedId = nextActiveId;
 
@@ -211,11 +213,11 @@ export default function App() {
   return (
     <div className="min-h-screen overflow-x-clip bg-slate-50 text-ink">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-11 w-11" />
             <div>
-              <h1 className="text-2xl font-bold tracking-normal">Lexora</h1>
+              <h1 className="text-xl font-semibold tracking-normal">Lexora</h1>
               <p className="text-sm text-slate-600">{t("app.tagline")}</p>
             </div>
           </div>
@@ -263,7 +265,7 @@ export default function App() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="flex min-h-14 items-center justify-between sm:hidden">
             <div className="min-w-0">
-              <span className="block text-sm font-bold text-slate-700">{currentNavLabel(view, t)}</span>
+              <span className="block text-sm font-semibold text-slate-700">{currentNavLabel(view, t)}</span>
               {activeSetup ? (
                 <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate-500">
                   <FlagIcon code={activeSetup.targetLanguage} />
@@ -286,7 +288,7 @@ export default function App() {
             </button>
           </div>
           <div className={`${mobileMenuOpen ? "grid" : "hidden"} min-w-0 max-w-full gap-3 overflow-x-clip pb-3 sm:flex sm:gap-1 sm:overflow-visible sm:pb-0`}>
-            <div className="grid w-full min-w-0 max-w-full gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:hidden">
+            <div className="app-subpanel grid w-full min-w-0 max-w-full gap-3 p-3 sm:hidden">
               <HeaderSelect label={t("profile.label")}>
                 <select
                   className="app-input"
@@ -444,18 +446,25 @@ function FirstRun({ onCreated }: { onCreated: (profile: Profile) => void }) {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
-      <form className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-6 shadow-soft" onSubmit={handleSubmit}>
+      <form className="app-panel w-full max-w-xl p-4" onSubmit={handleSubmit}>
         <div className="mb-6 flex items-center gap-3">
           <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-12 w-12" />
           <div>
-            <h1 className="text-2xl font-bold">{t("profile.firstRunTitle")}</h1>
+            <h1 className="text-xl font-semibold">{t("profile.firstRunTitle")}</h1>
             <p className="text-sm text-slate-600">{t("profile.firstRunBody")}</p>
           </div>
         </div>
 
         <div className="grid gap-4">
           <Label text={t("profile.name")}>
-            <input className="app-input" value={name} onChange={(event) => setName(event.target.value)} autoFocus required />
+            <input
+              className="app-input"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={t("profile.namePlaceholder")}
+              autoFocus
+              required
+            />
           </Label>
           <LanguageSelect label={t("profile.uiLanguage")} value={uiLanguage} onChange={setUiLanguage} />
           <button className="app-button app-button-primary" type="submit">
@@ -487,9 +496,9 @@ function SetupRequired({ profile, onCreated }: { profile: Profile; onCreated: ()
 
   return (
     <section className="flex items-center justify-center py-10">
-      <form className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-6 shadow-soft" onSubmit={handleSubmit}>
+      <form className="app-panel w-full max-w-xl p-4" onSubmit={handleSubmit}>
         <div className="mb-6">
-          <h1 className="text-2xl font-bold">{t("setup.firstRunTitle")}</h1>
+          <h1 className="text-xl font-semibold">{t("setup.firstRunTitle")}</h1>
           <p className="text-sm text-slate-600">{t("setup.firstRunBody")}</p>
         </div>
         <div className="grid gap-4">
@@ -667,7 +676,7 @@ function StudyView({
     return (
       <section className="grid gap-4">
         <ViewTitle title={t("study.paused")} />
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
+        <div className="app-panel p-4">
           <p className="text-sm text-slate-600">
             {session.reviewed} {t("study.reviewed")} · {session.queue.length + (session.current ? 1 : 0)} {t("study.remaining")}
           </p>
@@ -726,13 +735,13 @@ function StudyView({
             </button>
           </div>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
+        <div className="app-panel p-4">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <span className="app-chip">{directionLabel(session.current.card.direction, t)}</span>
             <span className="app-chip">{session.reviewed} {t("study.reviewed")}</span>
           </div>
           <div className="mb-4 flex items-start justify-between gap-3">
-            <p className="text-3xl font-bold">{prompt}</p>
+            <p className="text-2xl font-semibold">{prompt}</p>
             <button
               className="app-button app-button-secondary h-11 w-11 shrink-0 p-0"
               type="button"
@@ -748,6 +757,7 @@ function StudyView({
               className="app-input text-lg"
               value={session.answer}
               onChange={(event) => setSession({ ...session, answer: event.target.value })}
+              placeholder={t("study.answerPlaceholder")}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !session.revealed) {
                   submitAnswer();
@@ -764,9 +774,9 @@ function StudyView({
             </button>
           ) : (
             <div className="mt-5 grid gap-4">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className="text-sm font-semibold text-slate-600">{t("study.reveal")}</p>
-                <p className="mt-1 text-xl font-bold">{accepted.join(" / ")}</p>
+                <p className="mt-1 text-lg font-semibold">{accepted.join(" / ")}</p>
                 <p className="mt-2 text-sm font-semibold">
                   {session.match === "correct" ? t("study.correctAnswer") : null}
                   {session.match === "close" ? t("study.closeAnswer") : null}
@@ -802,9 +812,9 @@ function StudyView({
   }
 
   return (
-    <section className="grid gap-5">
+    <section className="grid gap-4">
       <ViewTitle title={t("study.title")} />
-      <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
+      <div className="app-panel grid gap-3 p-4">
         <div className="grid gap-4 md:grid-cols-3">
           <ScopeSelect scope={scope} setScope={setScope} decks={decks} subsets={subsets} />
           <DirectionPicker value={direction} setup={setup} onChange={setDirection} />
@@ -859,7 +869,12 @@ function LibraryView({
   const [query, setQuery] = useState("");
   const [deckFilter, setDeckFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<ReviewStatus>("all");
+  const [showWordDetails, setShowWordDetails] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const translationLimitReached = (usage?.count ?? 0) >= myMemoryDailyLimit;
+  const translationCount = usage?.count ?? 0;
+  const translationRemaining = Math.max(0, myMemoryDailyLimit - translationCount);
+  const translationQuotaPercent = Math.min(100, Math.round((translationCount / myMemoryDailyLimit) * 100));
 
   useEffect(() => {
     if (!form.deckId && decks[0]) {
@@ -903,7 +918,8 @@ function LibraryView({
   });
 
   async function fetchSuggestions(automatic = false) {
-    if (!form.targetText.trim() || translationLimitReached) {
+    const targetText = form.targetText.trim();
+    if (!targetText || translationLimitReached) {
       if (translationLimitReached) {
         onStatus(t("status.limitReached"));
       }
@@ -912,12 +928,15 @@ function LibraryView({
 
     setFetching(true);
     try {
-      const result = await fetchTranslationSuggestions(form.targetText, setup.targetLanguage, setup.baseLanguage);
+      const result = await fetchTranslationSuggestions(targetText, setup.targetLanguage, setup.baseLanguage);
       setSuggestions(result);
-      setLastAutoSuggestedText(form.targetText.trim());
+      setLastAutoSuggestedText(targetText);
+      if (!automatic && result.length === 0) {
+        onStatus(t("status.noSuggestions"));
+      }
       await onRefresh();
     } catch (error) {
-      setLastAutoSuggestedText(form.targetText.trim());
+      setLastAutoSuggestedText(targetText);
       if (!automatic) {
         onStatus(error instanceof Error && error.message === "daily-limit" ? t("status.limitReached") : t("status.offline"));
       }
@@ -960,6 +979,7 @@ function LibraryView({
 
     setForm({ ...emptyWordForm, deckId: decks[0]?.id ?? "" });
     setSuggestions([]);
+    setShowWordDetails(false);
     onStatus(t("status.saved"));
     await onRefresh();
   }
@@ -983,6 +1003,12 @@ function LibraryView({
     await onRefresh();
   }
 
+  function resetWordForm() {
+    setForm({ ...emptyWordForm, deckId: decks[0]?.id ?? "" });
+    setSuggestions([]);
+    setShowWordDetails(false);
+  }
+
   function editWord(word: WordEntry) {
     setForm({
       id: word.id,
@@ -992,14 +1018,32 @@ function LibraryView({
       deckId: word.deckId
     });
     setSuggestions([]);
+    setShowWordDetails(true);
   }
 
   return (
-    <section className="grid gap-5">
+    <section className="grid gap-4">
       <ViewTitle title={t("library.title")} />
-      <form className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-soft" onSubmit={saveWord}>
-        <h2 className="text-lg font-bold">{t("library.addWord")}</h2>
-        <div className="grid gap-4 lg:grid-cols-[1fr_1fr_220px]">
+      <form className="app-panel grid gap-3 p-4" onSubmit={saveWord}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold">{form.id ? t("common.edit") : t("library.addWord")}</h2>
+            {form.id ? <p className="truncate text-xs text-slate-500">{form.targetText}</p> : null}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {form.id ? (
+              <button className="app-button app-button-ghost" type="button" onClick={resetWordForm}>
+                {t("common.cancel")}
+              </button>
+            ) : null}
+            <button className="app-button app-button-ghost" type="button" onClick={() => setShowWordDetails((visible) => !visible)}>
+              <Settings size={16} />
+              {t("common.details")}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
           <Label
             text={
               <span className="flex items-center gap-1">
@@ -1008,13 +1052,61 @@ function LibraryView({
               </span>
             }
           >
-            <input className="app-input" value={form.targetText} onChange={(event) => setForm({ ...form, targetText: event.target.value })} required />
+            <input
+              className="app-input"
+              value={form.targetText}
+              onChange={(event) => setForm({ ...form, targetText: event.target.value })}
+              placeholder={t("library.targetPlaceholder")}
+              required
+            />
           </Label>
+          <button className="app-button app-button-secondary" type="button" onClick={() => fetchSuggestions(false)} disabled={fetching || !form.targetText.trim() || translationLimitReached}>
+            <Search size={18} />
+            {t("library.fetchSuggestions")}
+          </button>
+        </div>
+
+        {suggestions.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5" aria-label={t("library.suggestions")}>
+            {suggestions.map((suggestion) => (
+              <button
+                key={`${suggestion.text}-${suggestion.confidence}`}
+                className="inline-flex min-h-8 items-center gap-1 rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-sm font-medium text-indigo-900 transition-colors hover:border-indigo-200 hover:bg-indigo-100"
+                type="button"
+                onClick={() => {
+                  const next = new Set(splitTranslations(form.translations));
+                  next.add(suggestion.text);
+                  setForm({ ...form, translations: [...next].join("; ") });
+                }}
+              >
+                {suggestion.text}
+                <span className="rounded-full bg-white/80 px-1.5 text-[0.68rem] text-indigo-600">{Math.round(suggestion.confidence * 100)}%</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div
+          className={`flex items-center justify-between gap-3 rounded-md border px-2.5 py-1.5 text-xs ${
+            translationLimitReached
+              ? "border-rose-200 bg-rose-50 text-rose-900"
+              : translationQuotaPercent >= 80
+                ? "border-amber-200 bg-amber-50 text-amber-900"
+                : "border-slate-200 bg-slate-50 text-slate-600"
+          }`}
+          title={t("settings.usage")}
+        >
+          <span>{t("settings.usage")}</span>
+          <span className="font-semibold">
+            {translationRemaining} / {myMemoryDailyLimit} {t("settings.requestsRemaining")}
+          </span>
+        </div>
+
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
           <Label
             text={
               <span className="flex items-center gap-1">
                 <FlagIcon code={setup.baseLanguage} />
-                {t("library.manualTranslation")}
+                {t("common.translations")}
               </span>
             }
           >
@@ -1026,60 +1118,48 @@ function LibraryView({
               required
             />
           </Label>
-          <Label text={t("common.deck")}>
-            <select className="app-input" value={form.deckId} onChange={(event) => setForm({ ...form, deckId: event.target.value })}>
-              {decks.map((deck) => (
-                <option key={deck.id} value={deck.id}>
-                  {deck.name}
-                </option>
-              ))}
-            </select>
-          </Label>
-        </div>
-        <Label text={`${t("common.notes")} (${t("common.optional")})`}>
-          <textarea className="app-input min-h-24" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
-        </Label>
-        <div className="flex flex-wrap gap-2">
-          <button className="app-button app-button-secondary" type="button" onClick={() => fetchSuggestions(false)} disabled={fetching || !form.targetText.trim() || translationLimitReached}>
-            <Search size={18} />
-            {t("library.fetchSuggestions")}
-          </button>
           <button className="app-button app-button-primary" type="submit">
             <Plus size={18} />
             {form.id ? t("common.save") : t("common.add")}
           </button>
-          {form.id ? (
-            <button className="app-button app-button-ghost" type="button" onClick={() => setForm({ ...emptyWordForm, deckId: decks[0]?.id ?? "" })}>
-              {t("common.cancel")}
-            </button>
-          ) : null}
         </div>
-        {suggestions.length > 0 ? (
-          <div className="flex flex-wrap gap-2" aria-label={t("library.suggestions")}>
-            {suggestions.map((suggestion) => (
-              <button
-                key={`${suggestion.text}-${suggestion.confidence}`}
-                className="app-button app-button-secondary"
-                type="button"
-                onClick={() => {
-                  const next = new Set(splitTranslations(form.translations));
-                  next.add(suggestion.text);
-                  setForm({ ...form, translations: [...next].join("; ") });
-                }}
-              >
-                {suggestion.text}
-                <span className="text-xs text-slate-500">{Math.round(suggestion.confidence * 100)}%</span>
-              </button>
-            ))}
+
+        {showWordDetails ? (
+          <div className="app-subpanel grid gap-3 p-3 md:grid-cols-[16rem_minmax(0,1fr)]">
+            <Label text={t("common.deck")}>
+              <select className="app-input" value={form.deckId} onChange={(event) => setForm({ ...form, deckId: event.target.value })}>
+                {decks.map((deck) => (
+                  <option key={deck.id} value={deck.id}>
+                    {deck.name}
+                  </option>
+                ))}
+              </select>
+            </Label>
+            <Label text={`${t("common.notes")} (${t("common.optional")})`}>
+              <textarea
+                className="app-input min-h-20"
+                value={form.notes}
+                onChange={(event) => setForm({ ...form, notes: event.target.value })}
+                placeholder={t("library.notesPlaceholder")}
+              />
+            </Label>
           </div>
         ) : null}
+
       </form>
 
-      <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4">
-        <div className="grid gap-3 md:grid-cols-3">
+      <div className="app-panel grid gap-3 p-4">
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
           <Label text={t("common.search")}>
-            <input className="app-input" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <input className="app-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("library.searchPlaceholder")} />
           </Label>
+          <button className="app-button app-button-secondary" type="button" onClick={() => setShowFilters((visible) => !visible)}>
+            <Search size={16} />
+            {t("library.filters")}
+          </button>
+        </div>
+        {showFilters ? (
+          <div className="grid gap-3 border-t border-slate-200 pt-3 md:grid-cols-2">
           <Label text={t("common.deck")}>
             <select className="app-input" value={deckFilter} onChange={(event) => setDeckFilter(event.target.value)}>
               <option value="all">{t("common.all")}</option>
@@ -1098,35 +1178,34 @@ function LibraryView({
               <option value="learned">{t("common.learned")}</option>
             </select>
           </Label>
-        </div>
+          </div>
+        ) : null}
       </div>
 
-      <div className="grid gap-3">
+      <div className="app-panel overflow-hidden">
         {filteredWords.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-slate-600">{t("library.noWords")}</div>
+          <div className="p-4 text-slate-600">{t("library.noWords")}</div>
         ) : null}
         {filteredWords.map((word) => (
-          <article key={word.id} className="rounded-lg border border-slate-200 bg-white p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div>
-                <h3 className="text-lg font-bold">{word.targetText}</h3>
-                <p className="text-slate-700">{word.translations.join(" / ")}</p>
-                <div className="mt-2 flex flex-wrap gap-2">
+          <article key={word.id} className="border-t border-slate-100 px-3 py-2.5 first:border-t-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <h3 className="font-semibold leading-snug text-slate-950">{word.targetText}</h3>
+                  <p className="text-sm leading-snug text-slate-700">{word.translations.join(" / ")}</p>
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
                   <span className="app-chip">{decks.find((deck) => deck.id === word.deckId)?.name ?? t("common.deck")}</span>
-                  <span className="app-chip">
-                    <FlagIcon code={setup.targetLanguage} />
-                    {languageOptionLabel(setup.targetLanguage, profile.uiLanguage)}
-                  </span>
                   <span className="app-chip">{formatLastReviewed(cardByWord.get(word.id), t("library.lastReviewed"), profile.uiLanguage)}</span>
                 </div>
-                {word.notes ? <p className="mt-3 text-sm text-slate-600">{word.notes}</p> : null}
+                {word.notes ? <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{word.notes}</p> : null}
               </div>
-              <div className="flex gap-2">
-                <button className="app-button app-button-secondary" onClick={() => editWord(word)} aria-label={t("common.edit")}>
-                  <Edit2 size={17} />
+              <div className="flex shrink-0 gap-1">
+                <button className="app-button app-button-secondary h-9 w-9 p-0" onClick={() => editWord(word)} aria-label={t("common.edit")}>
+                  <Edit2 size={18} />
                 </button>
-                <button className="app-button app-button-danger" onClick={() => deleteWord(word)} aria-label={t("common.delete")}>
-                  <Trash2 size={17} />
+                <button className="app-button app-button-danger h-9 w-9 p-0" onClick={() => deleteWord(word)} aria-label={t("common.delete")}>
+                  <Trash2 size={18} />
                 </button>
               </div>
             </div>
@@ -1256,13 +1335,13 @@ function DecksView({
   }
 
   return (
-    <section className="grid gap-5">
+    <section className="grid gap-4">
       <ViewTitle title={t("decks.title")} />
       <div className="grid gap-4 lg:grid-cols-2">
-        <form className="grid gap-3 rounded-lg border border-slate-200 bg-white p-5 shadow-soft" onSubmit={addDeck}>
-          <h2 className="text-lg font-bold">{t("decks.createDeck")}</h2>
+        <form className="app-panel grid gap-3 p-4" onSubmit={addDeck}>
+          <h2 className="text-base font-semibold">{t("decks.createDeck")}</h2>
           <Label text={t("decks.deckName")}>
-            <input className="app-input" value={deckName} onChange={(event) => setDeckName(event.target.value)} />
+            <input className="app-input" value={deckName} onChange={(event) => setDeckName(event.target.value)} placeholder={t("decks.deckNamePlaceholder")} />
           </Label>
           <button className="app-button app-button-primary w-fit" type="submit">
             <Plus size={18} />
@@ -1270,12 +1349,12 @@ function DecksView({
           </button>
         </form>
 
-        <form className="grid gap-3 rounded-lg border border-slate-200 bg-white p-5 shadow-soft" onSubmit={addSubset}>
-          <h2 className="text-lg font-bold">{editingSubsetId ? t("decks.editSubset") : t("decks.createSubset")}</h2>
+        <form className="app-panel grid gap-3 p-4" onSubmit={addSubset}>
+          <h2 className="text-base font-semibold">{editingSubsetId ? t("decks.editSubset") : t("decks.createSubset")}</h2>
           <Label text={t("decks.subsetName")}>
-            <input className="app-input" value={subsetName} onChange={(event) => setSubsetName(event.target.value)} />
+            <input className="app-input" value={subsetName} onChange={(event) => setSubsetName(event.target.value)} placeholder={t("decks.subsetNamePlaceholder")} />
           </Label>
-          <div className="max-h-52 overflow-auto rounded-lg border border-slate-200 p-2">
+          <div className="app-subpanel max-h-52 overflow-auto p-2">
             {words.map((word) => (
               <label key={word.id} className="flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-slate-50">
                 <input
@@ -1308,10 +1387,10 @@ function DecksView({
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="grid gap-3">
           {decks.map((deck) => (
-            <article key={deck.id} className="rounded-lg border border-slate-200 bg-white p-4">
+            <article key={deck.id} className="app-panel p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="font-bold">{deck.name}</h3>
+                  <h3 className="font-semibold">{deck.name}</h3>
                   <p className="text-sm text-slate-600">{words.filter((word) => word.deckId === deck.id).length} {t("common.word")}</p>
                 </div>
                 <div className="flex gap-2">
@@ -1328,13 +1407,13 @@ function DecksView({
         </div>
         <div className="grid gap-3">
           {subsets.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-slate-600">{t("decks.noSubsets")}</div>
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-slate-600">{t("decks.noSubsets")}</div>
           ) : null}
           {subsets.map((subset) => (
-            <article key={subset.id} className="rounded-lg border border-slate-200 bg-white p-4">
+            <article key={subset.id} className="app-panel p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="font-bold">{subset.name}</h3>
+                  <h3 className="font-semibold">{subset.name}</h3>
                   <p className="text-sm text-slate-600">{subset.wordIds.length} {t("decks.selectedWords")}</p>
                 </div>
                 <div className="flex gap-2">
@@ -1498,18 +1577,18 @@ function SettingsView({
   }
 
   return (
-    <section className="grid gap-5">
+    <section className="grid gap-4">
       <ViewTitle title={t("settings.title")} />
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
-          <h2 className="text-lg font-bold">{t("settings.languages")}</h2>
+        <div className="app-panel grid gap-3 p-4">
+          <h2 className="text-base font-semibold">{t("settings.languages")}</h2>
           <LanguageSelect label={t("profile.uiLanguage")} value={profile.uiLanguage} onChange={updateUiLanguage} />
         </div>
 
-        <form className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-soft" onSubmit={createAdditionalProfile}>
-          <h2 className="text-lg font-bold">{t("profile.createAnother")}</h2>
+        <form className="app-panel grid gap-3 p-4" onSubmit={createAdditionalProfile}>
+          <h2 className="text-base font-semibold">{t("profile.createAnother")}</h2>
           <Label text={t("profile.name")}>
-            <input className="app-input" value={newProfileName} onChange={(event) => setNewProfileName(event.target.value)} />
+            <input className="app-input" value={newProfileName} onChange={(event) => setNewProfileName(event.target.value)} placeholder={t("profile.namePlaceholder")} />
           </Label>
           <p className="text-sm text-slate-600">{profiles.length} {t("profile.switch")}</p>
           <button className="app-button app-button-primary w-fit" type="submit">
@@ -1520,8 +1599,8 @@ function SettingsView({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <form className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-soft" onSubmit={createSetup}>
-          <h2 className="text-lg font-bold">{t("setup.create")}</h2>
+        <form className="app-panel grid gap-3 p-4" onSubmit={createSetup}>
+          <h2 className="text-base font-semibold">{t("setup.create")}</h2>
           <Label text={t("setup.name")}>
             <input
               className="app-input"
@@ -1560,13 +1639,13 @@ function SettingsView({
           </button>
         </form>
 
-        <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
-          <h2 className="text-lg font-bold">{t("setup.title")}</h2>
+        <div className="app-panel grid gap-3 p-4">
+          <h2 className="text-base font-semibold">{t("setup.title")}</h2>
           {learningSetups.map((setup) => (
-            <div key={setup.id} className="grid gap-3 rounded-lg border border-slate-200 p-3">
+            <div key={setup.id} className="app-subpanel grid gap-3 p-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-2 font-bold">
+                  <p className="flex items-center gap-2 font-semibold">
                     <FlagIcon code={setup.targetLanguage} />
                     <span className="truncate">{learningSetupDisplayName(setup, i18n.language)}</span>
                   </p>
@@ -1600,7 +1679,7 @@ function SettingsView({
                 </div>
               </div>
               {editingSetupLanguagesId === setup.id ? (
-                <div className="grid gap-3 rounded-lg bg-slate-50 p-3">
+                <div className="app-subpanel grid gap-3 p-3">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <LanguageSelect
                       label={t("setup.baseLanguage")}
@@ -1640,8 +1719,8 @@ function SettingsView({
         </div>
       </div>
 
-      <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
-        <h2 className="text-lg font-bold">{t("settings.data")}</h2>
+      <div className="app-panel grid gap-3 p-4">
+        <h2 className="text-base font-semibold">{t("settings.data")}</h2>
         <div className="flex flex-wrap gap-2">
           <button
             className="app-button app-button-secondary"
@@ -1670,8 +1749,8 @@ function SettingsView({
         </div>
       </div>
 
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-amber-950">
-        <h2 className="text-lg font-bold">{t("settings.usage")}</h2>
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950">
+        <h2 className="text-base font-semibold">{t("settings.usage")}</h2>
         <p>
           {usage?.count ?? 0} / {myMemoryDailyLimit} {t("common.today")}
         </p>
@@ -1900,7 +1979,7 @@ function LanguageSelect({
     <div className="relative min-w-0 max-w-full" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
       <span className="mb-1 block text-sm font-semibold text-slate-700">{label}</span>
       <button
-        className="app-input flex min-h-11 min-w-0 items-center justify-between gap-3 text-left"
+        className="app-input flex min-h-10 min-w-0 items-center justify-between gap-3 text-left"
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -1916,14 +1995,14 @@ function LanguageSelect({
       </button>
       {open ? (
         <div
-          className="absolute z-40 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-slate-200 bg-white p-1 shadow-soft"
+          className="app-panel absolute z-40 mt-1 max-h-72 w-full overflow-auto p-1"
           role="listbox"
         >
           {availableCodes.map((code) => (
             <button
               key={code}
               className={`flex w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 ${
-                code === value ? "bg-indigo-50 font-bold text-indigo-900" : "text-slate-800"
+                code === value ? "bg-indigo-50 font-semibold text-indigo-900" : "text-slate-800"
               }`}
               type="button"
               role="option"
@@ -1954,7 +2033,7 @@ function Label({ text, children }: { text: React.ReactNode; children: React.Reac
 
 function HeaderSelect({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="grid min-w-0 gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+    <label className="grid min-w-0 gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
       <span className="truncate">{label}</span>
       {children}
     </label>
@@ -2024,9 +2103,9 @@ function LearningSetupSelect({
 
   return (
     <div className="relative min-w-0 max-w-full" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
-      <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
       <button
-        className="app-input flex min-h-11 min-w-0 items-center justify-between gap-3 text-left"
+        className="app-input flex min-h-10 min-w-0 items-center justify-between gap-3 text-left"
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -2051,14 +2130,14 @@ function LearningSetupSelect({
       </button>
       {open ? (
         <div
-          className="absolute z-40 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-slate-200 bg-white p-1 shadow-soft"
+          className="app-panel absolute z-40 mt-1 max-h-72 w-full overflow-auto p-1"
           role="listbox"
         >
           {setups.map((setup) => (
             <button
               key={setup.id}
               className={`flex w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 ${
-                setup.id === value ? "bg-indigo-50 font-bold text-indigo-900" : "text-slate-800"
+                setup.id === value ? "bg-indigo-50 font-semibold text-indigo-900" : "text-slate-800"
               }`}
               type="button"
               role="option"
@@ -2086,14 +2165,14 @@ function LearningSetupSelect({
 }
 
 function ViewTitle({ title }: { title: string }) {
-  return <h2 className="text-2xl font-bold tracking-normal">{title}</h2>;
+  return <h2 className="text-xl font-semibold tracking-normal">{title}</h2>;
 }
 
 function Metric({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
   return (
-    <div className={`rounded-lg border border-slate-200 bg-white ${compact ? "p-3" : "p-5 shadow-soft"}`}>
+    <div className={`app-panel ${compact ? "p-3" : "p-4"}`}>
       <p className="text-sm font-semibold text-slate-600">{label}</p>
-      <p className="text-2xl font-bold">{value}</p>
+      <p className="text-xl font-semibold">{value}</p>
     </div>
   );
 }
@@ -2111,7 +2190,7 @@ function NavButton({
 }) {
   return (
     <button
-      className={`flex min-h-11 w-full items-center gap-2 rounded-lg border px-3 text-sm font-bold sm:min-h-12 sm:w-auto sm:rounded-none sm:border-x-0 sm:border-t-0 sm:border-b-2 ${
+      className={`flex min-h-10 w-full items-center gap-2 rounded-lg border px-3 text-sm font-semibold sm:min-h-11 sm:w-auto sm:rounded-none sm:border-x-0 sm:border-t-0 sm:border-b-2 ${
         active
           ? "border-indigo-700 bg-indigo-50 text-indigo-800 sm:bg-transparent"
           : "border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-950 sm:border-transparent sm:hover:bg-transparent"
