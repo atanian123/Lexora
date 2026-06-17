@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Download,
   Edit2,
+  Gauge,
   Layers,
   Menu,
   Plus,
@@ -17,7 +18,7 @@ import {
   Volume2,
   X
 } from "lucide-react";
-import { FormEvent, ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, ChangeEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type CardDirection,
@@ -149,6 +150,28 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    if (!mobileMenuOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
     const updateOnlineState = () => setIsOnline(navigator.onLine);
 
     window.addEventListener("online", updateOnlineState);
@@ -243,26 +266,92 @@ export default function App() {
     setThemeState(value);
   }
 
+  async function updateActiveUiLanguage(value: LanguageCode) {
+    if (!activeProfile) {
+      return;
+    }
+
+    await db.profiles.update(activeProfile.id, { uiLanguage: value, updatedAt: nowIso() });
+    await refreshAll(activeProfile.id, false);
+  }
+
   return (
     <div className="app-shell">
       <header className="app-header app-glass sticky top-0 z-30 border-b">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-11 w-11 drop-shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
-            <div>
-              <h1 className="app-heading text-xl font-bold tracking-tight">Lexora</h1>
-              <p className="app-muted text-sm">{t("app.tagline")}</p>
+        <div className="mx-auto grid max-w-7xl gap-3 px-4 py-3 sm:px-6">
+          <div className="desktop-top-row">
+            <div className="flex min-w-0 items-center gap-3">
+              <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-11 w-11 shrink-0 drop-shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
+              <div className="min-w-0">
+                <h1 className="app-heading text-xl font-bold tracking-tight">Lexora</h1>
+                <p className="app-muted truncate text-sm">{t("app.tagline")}</p>
+              </div>
+            </div>
+            <div className="desktop-nav-tabs" aria-label="Primary">
+              <NavButton
+                icon={<BookOpen size={18} />}
+                label={t("nav.study")}
+                active={view === "study"}
+                onClick={() => setView("study")}
+              />
+              <NavButton
+                icon={<Search size={18} />}
+                label={t("nav.library")}
+                active={view === "library"}
+                onClick={() => setView("library")}
+              />
+              <NavButton
+                icon={<Layers size={18} />}
+                label={t("nav.decks")}
+                active={view === "decks"}
+                onClick={() => setView("decks")}
+              />
+              <NavButton
+                icon={<Settings size={18} />}
+                label={t("nav.settings")}
+                active={view === "settings"}
+                onClick={() => setView("settings")}
+              />
+            </div>
+            <button
+              className="mobile-menu-trigger app-button app-button-secondary h-10 w-10 shrink-0 p-0"
+              type="button"
+              aria-expanded={mobileMenuOpen}
+              aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
+              data-tooltip={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
+              onClick={() => setMobileMenuOpen((open) => !open)}
+            >
+              {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
+            <div className="desktop-preferences">
+              <ChromePreferences
+                uiLanguage={activeProfile.uiLanguage}
+                theme={theme}
+                onLanguageChange={updateActiveUiLanguage}
+                onThemeChange={setTheme}
+              />
             </div>
           </div>
 
-          <div className="hidden w-full gap-3 sm:grid lg:w-auto lg:grid-cols-[minmax(18rem,22rem)_13rem] lg:items-end">
-            <div className="grid gap-2">
-              <HeaderSelect label={t("profile.label")}>
+          <div className="desktop-header-controls">
+            <div className="desktop-practice-control">
+              <LearningSetupSelect
+                label={t("setup.label")}
+                value={activeSetup?.id ?? ""}
+                setups={learningSetups}
+                locale={activeProfile.uiLanguage}
+                onChange={async (setupId) => {
+                  await db.profiles.update(activeProfile.id, { activeLearningSetupId: setupId, updatedAt: nowIso() });
+                  await refreshAll(activeProfile.id);
+                }}
+              />
+            </div>
+            <div className="desktop-meta-controls">
+            <HeaderSelect label={t("profile.label")} tooltip={t("profile.switch")}>
                 <select
                   className="app-input"
                   value={activeProfile.id}
                   aria-label={t("profile.switch")}
-                  title={t("profile.switch")}
                   onChange={(event) => {
                     setActiveProfileId(event.target.value);
                     void refreshAll(event.target.value);
@@ -275,28 +364,18 @@ export default function App() {
                   ))}
                 </select>
               </HeaderSelect>
-              <LearningSetupSelect
-                label={t("setup.label")}
-                value={activeSetup?.id ?? ""}
-                setups={learningSetups}
-                locale={activeProfile.uiLanguage}
-                onChange={async (setupId) => {
-                  await db.profiles.update(activeProfile.id, { activeLearningSetupId: setupId, updatedAt: nowIso() });
-                  await refreshAll(activeProfile.id);
-                }}
-              />
-            </div>
-            <div className="grid gap-2">
-              <UsageBadge usage={usage} />
-              <ConnectionBadge online={isOnline} />
+              <div className="desktop-status-row">
+                <UsageBadge usage={usage} compact />
+                <ConnectionBadge online={isOnline} compact />
+              </div>
             </div>
           </div>
         </div>
       </header>
 
-      <nav className="app-nav app-glass border-b" aria-label="Primary">
+      <nav className="app-nav app-glass border-b sm:hidden" aria-label="Primary">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="flex min-h-14 items-center justify-between sm:hidden">
+          <div className="flex min-h-14 items-center sm:hidden">
             <div className="min-w-0">
               <span className="app-heading block text-sm font-semibold">{currentNavLabel(view, t)}</span>
               {activeSetup ? (
@@ -310,90 +389,122 @@ export default function App() {
                 </span>
               ) : null}
             </div>
-            <button
-              className="app-button app-button-secondary h-10 w-10 p-0"
-              type="button"
-              aria-expanded={mobileMenuOpen}
-              aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
-              onClick={() => setMobileMenuOpen((open) => !open)}
-            >
-              {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
-            </button>
-          </div>
-          <div className={`${mobileMenuOpen ? "grid" : "hidden"} min-w-0 max-w-full gap-3 overflow-x-hidden pb-3 sm:flex sm:gap-1 sm:overflow-visible sm:pb-0`}>
-            <div className="app-mobile-menu app-glass grid w-full min-w-0 max-w-full gap-3 p-3 sm:hidden">
-              <HeaderSelect label={t("profile.label")}>
-                <select
-                  className="app-input"
-                  value={activeProfile.id}
-                  aria-label={t("profile.switch")}
-                  title={t("profile.switch")}
-                  onChange={(event) => {
-                    setActiveProfileId(event.target.value);
-                    void refreshAll(event.target.value);
-                    setMobileMenuOpen(false);
-                  }}
-                >
-                  {profiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name}
-                    </option>
-                  ))}
-                </select>
-              </HeaderSelect>
-              <LearningSetupSelect
-                label={t("setup.label")}
-                value={activeSetup?.id ?? ""}
-                setups={learningSetups}
-                locale={activeProfile.uiLanguage}
-                onChange={async (setupId) => {
-                  await db.profiles.update(activeProfile.id, { activeLearningSetupId: setupId, updatedAt: nowIso() });
-                  await refreshAll(activeProfile.id);
-                  setMobileMenuOpen(false);
-                }}
-              />
-              <UsageBadge usage={usage} />
-              <ConnectionBadge online={isOnline} />
-            </div>
-            <NavButton
-              icon={<BookOpen size={18} />}
-              label={t("nav.study")}
-              active={view === "study"}
-              onClick={() => {
-                setView("study");
-                setMobileMenuOpen(false);
-              }}
-            />
-            <NavButton
-              icon={<Search size={18} />}
-              label={t("nav.library")}
-              active={view === "library"}
-              onClick={() => {
-                setView("library");
-                setMobileMenuOpen(false);
-              }}
-            />
-            <NavButton
-              icon={<Layers size={18} />}
-              label={t("nav.decks")}
-              active={view === "decks"}
-              onClick={() => {
-                setView("decks");
-                setMobileMenuOpen(false);
-              }}
-            />
-            <NavButton
-              icon={<Settings size={18} />}
-              label={t("nav.settings")}
-              active={view === "settings"}
-              onClick={() => {
-                setView("settings");
-                setMobileMenuOpen(false);
-              }}
-            />
           </div>
         </div>
       </nav>
+
+      {mobileMenuOpen ? (
+        <div className="fixed inset-0 z-50 sm:hidden" role="presentation">
+          <button
+            className="app-backdrop absolute inset-0"
+            type="button"
+            aria-label={t("nav.closeMenu")}
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <aside
+            className="app-mobile-drawer app-glass absolute inset-y-0 right-0 flex w-[min(22rem,calc(100vw-1rem))] max-w-full flex-col overflow-y-auto p-4 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("nav.menu")}
+          >
+            <div className="mb-4 flex h-11 items-center justify-between gap-3">
+              <ChromePreferences
+                uiLanguage={activeProfile.uiLanguage}
+                theme={theme}
+                onLanguageChange={updateActiveUiLanguage}
+                onThemeChange={setTheme}
+              />
+              <button
+                className="app-button app-button-secondary h-10 w-10 shrink-0 p-0"
+                type="button"
+                aria-label={t("nav.closeMenu")}
+                data-tooltip={t("nav.closeMenu")}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid gap-4">
+              <section className="app-subpanel grid gap-3 p-3">
+                <HeaderSelect label={t("profile.label")} tooltip={t("profile.switch")}>
+                  <select
+                    className="app-input"
+                    value={activeProfile.id}
+                    aria-label={t("profile.switch")}
+                    onChange={(event) => {
+                      setActiveProfileId(event.target.value);
+                      void refreshAll(event.target.value);
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                </HeaderSelect>
+                <LearningSetupSelect
+                  label={t("setup.label")}
+                  value={activeSetup?.id ?? ""}
+                  setups={learningSetups}
+                  locale={activeProfile.uiLanguage}
+                  onChange={async (setupId) => {
+                    await db.profiles.update(activeProfile.id, { activeLearningSetupId: setupId, updatedAt: nowIso() });
+                    await refreshAll(activeProfile.id);
+                    setMobileMenuOpen(false);
+                  }}
+                />
+              </section>
+
+              <section className="grid gap-2" aria-label={t("nav.menu")}>
+                <NavButton
+                  icon={<BookOpen size={18} />}
+                  label={t("nav.study")}
+                  active={view === "study"}
+                  onClick={() => {
+                    setView("study");
+                    setMobileMenuOpen(false);
+                  }}
+                />
+                <NavButton
+                  icon={<Search size={18} />}
+                  label={t("nav.library")}
+                  active={view === "library"}
+                  onClick={() => {
+                    setView("library");
+                    setMobileMenuOpen(false);
+                  }}
+                />
+                <NavButton
+                  icon={<Layers size={18} />}
+                  label={t("nav.decks")}
+                  active={view === "decks"}
+                  onClick={() => {
+                    setView("decks");
+                    setMobileMenuOpen(false);
+                  }}
+                />
+                <NavButton
+                  icon={<Settings size={18} />}
+                  label={t("nav.settings")}
+                  active={view === "settings"}
+                  onClick={() => {
+                    setView("settings");
+                    setMobileMenuOpen(false);
+                  }}
+                />
+              </section>
+
+              <section className="grid gap-2">
+                <UsageBadge usage={usage} />
+                <ConnectionBadge online={isOnline} />
+              </section>
+            </div>
+          </aside>
+        </div>
+      ) : null}
 
       {status ? (
         <div className="app-status app-glass border-b px-4 py-2 text-center text-sm font-semibold">
@@ -448,8 +559,6 @@ export default function App() {
             decks={decks}
             words={words}
             usage={usage}
-            theme={theme}
-            onThemeChange={setTheme}
             onRefresh={refreshAll}
             onStatus={setStatus}
           />
@@ -501,7 +610,7 @@ function FirstRun({ onCreated }: { onCreated: (profile: Profile) => void }) {
             />
           </Label>
           <LanguageSelect label={t("profile.uiLanguage")} value={uiLanguage} onChange={setUiLanguage} />
-          <button className="app-button app-button-primary" type="submit">
+          <button className="app-button app-button-primary" type="submit" data-tooltip={t("common.create")}>
             <UserRound size={18} />
             {t("common.create")}
           </button>
@@ -568,7 +677,7 @@ function SetupRequired({ profile, onCreated }: { profile: Profile; onCreated: ()
               }}
             />
           </div>
-          <button className="app-button app-button-primary" type="submit">
+          <button className="app-button app-button-primary" type="submit" data-tooltip={t("setup.create")}>
             <Plus size={18} />
             {t("common.create")}
           </button>
@@ -772,11 +881,11 @@ function StudyView({
             <button
               className="app-button app-button-primary"
               onClick={() => setSession({ ...session, paused: false })}
-              title={t("study.resumeHint")}
+              data-tooltip={t("study.resumeHint")}
             >
               {t("study.resume")}
             </button>
-            <button className="app-button app-button-ghost" onClick={() => setSession(null)} title={t("study.abandonHint")}>
+            <button className="app-button app-button-ghost" onClick={() => setSession(null)} data-tooltip={t("study.abandonHint")}>
               {t("study.abandon")}
             </button>
           </div>
@@ -795,11 +904,11 @@ function StudyView({
             <p className="font-semibold">{t("study.noCards")}</p>
             <p className="mt-1 text-sm">{t("study.noDueBody")}</p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <button className="app-button app-button-secondary" onClick={() => startSession(true)} title={t("study.practiceAnywayHint")}>
+              <button className="app-button app-button-secondary" onClick={() => startSession(true)} data-tooltip={t("study.practiceAnywayHint")}>
                 <RotateCcw size={18} />
                 {t("study.includeFuture")}
               </button>
-              <button className="app-button app-button-ghost" onClick={() => setSession(null)}>
+              <button className="app-button app-button-ghost" onClick={() => setSession(null)} data-tooltip={t("study.backToStudyHint")}>
                 {t("study.backToStudy")}
               </button>
             </div>
@@ -817,7 +926,7 @@ function StudyView({
           <Metric label={t("study.accuracy")} value={`${accuracy}%`} hint={t("study.accuracyHint")} />
           <Metric label={t("study.streak")} value={session.bestStreak.toString()} hint={t("study.streakHint")} />
         </div>
-        <button className="app-button app-button-primary w-fit" onClick={() => setSession(null)} title={t("study.backToStudyHint")}>
+        <button className="app-button app-button-primary w-fit" onClick={() => setSession(null)} data-tooltip={t("study.backToStudyHint")}>
           {t("study.backToStudy")}
         </button>
       </section>
@@ -846,10 +955,10 @@ function StudyView({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <ViewTitle title={t("study.title")} />
           <div className="flex flex-wrap gap-2">
-            <button className="app-button app-button-secondary" onClick={() => setSession({ ...session, paused: true })} title={t("study.pauseHint")}>
+            <button className="app-button app-button-secondary" onClick={() => setSession({ ...session, paused: true })} data-tooltip={t("study.pauseHint")}>
               {t("study.pause")}
             </button>
-            <button className="app-button app-button-ghost" onClick={() => setSession(null)} title={t("study.abandonHint")}>
+            <button className="app-button app-button-ghost" onClick={() => setSession(null)} data-tooltip={t("study.abandonHint")}>
               {t("study.abandon")}
             </button>
           </div>
@@ -866,7 +975,7 @@ function StudyView({
               type="button"
               disabled
               aria-label={t("study.audioPlaceholder")}
-              title={t("study.audioPlaceholder")}
+              data-tooltip={t("study.audioPlaceholder")}
             >
               <Volume2 size={18} />
             </button>
@@ -890,7 +999,7 @@ function StudyView({
             />
           </Label>
           {!session.revealed ? (
-            <button className="app-button app-button-primary mt-4" onClick={submitAnswer} disabled={!session.answer.trim()}>
+            <button className="app-button app-button-primary mt-4" onClick={submitAnswer} disabled={!session.answer.trim()} data-tooltip={t("study.submit")}>
               <Check size={18} />
               {t("study.submit")}
             </button>
@@ -934,7 +1043,7 @@ function StudyView({
                         : "app-button-secondary"
                     }`}
                     onClick={() => setSession({ ...session, selectedRating: rating })}
-                    title={`${t(`study.${rating}`)}: ${t(`study.${rating}Hint`)}`}
+                    data-tooltip={`${t(`study.${rating}`)}: ${t(`study.${rating}Hint`)}`}
                     type="button"
                   >
                     {t(`study.${rating}`)}
@@ -948,7 +1057,7 @@ function StudyView({
                     hint: t(`study.${session.selectedRating ?? "again"}Hint`)
                   })}
                 </p>
-                <button className="app-button app-button-primary" onClick={() => void advanceStudyCard()} type="button" ref={nextButtonRef}>
+                <button className="app-button app-button-primary" onClick={() => void advanceStudyCard()} type="button" ref={nextButtonRef} data-tooltip={t("study.next")}>
                   {t("study.next")}
                 </button>
               </div>
@@ -964,13 +1073,13 @@ function StudyView({
       <ViewTitle title={t("study.title")} />
       <div className="app-panel grid gap-3 p-4">
         <p className="app-muted text-sm">{t("study.setupHelp")}</p>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
           <ScopeSelect scope={scope} setScope={setScope} decks={decks} subsets={subsets} />
           <DirectionPicker value={direction} setup={setup} onChange={setDirection} />
-          <Metric label={t("common.due")} value={dueCount.toString()} compact hint={t("study.dueHint")} />
+          <DueStatus count={dueCount} />
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="app-button app-button-primary" onClick={() => startSession(false)} disabled={activePairWords.length === 0} title={t("study.startHint")}>
+          <button className="app-button app-button-primary" onClick={() => startSession(false)} disabled={activePairWords.length === 0} data-tooltip={t("study.startHint")}>
             <ChevronRight size={18} />
             {t("study.start")}
           </button>
@@ -981,7 +1090,7 @@ function StudyView({
               void startSession(true);
             }}
             disabled={activePairWords.length === 0 || allowFuture}
-            title={t("study.practiceAnywayHint")}
+            data-tooltip={t("study.practiceAnywayHint")}
           >
             <RotateCcw size={18} />
             {t("study.includeFuture")}
@@ -1182,11 +1291,11 @@ function LibraryView({
           </div>
           <div className="flex flex-wrap gap-1.5">
             {form.id ? (
-              <button className="app-button app-button-ghost" type="button" onClick={resetWordForm}>
+              <button className="app-button app-button-ghost" type="button" onClick={resetWordForm} data-tooltip={t("common.cancel")}>
                 {t("common.cancel")}
               </button>
             ) : null}
-            <button className="app-button app-button-ghost" type="button" onClick={() => setShowWordDetails((visible) => !visible)}>
+            <button className="app-button app-button-ghost" type="button" onClick={() => setShowWordDetails((visible) => !visible)} data-tooltip={t("common.details")}>
               <Settings size={16} />
               {t("common.details")}
             </button>
@@ -1210,7 +1319,7 @@ function LibraryView({
               required
             />
           </Label>
-          <button className="app-button app-button-secondary" type="button" onClick={() => fetchSuggestions(false)} disabled={fetching || !form.targetText.trim() || translationLimitReached}>
+          <button className="app-button app-button-secondary" type="button" onClick={() => fetchSuggestions(false)} disabled={fetching || !form.targetText.trim() || translationLimitReached} data-tooltip={t("library.fetchSuggestions")}>
             <Search size={18} />
             {t("library.fetchSuggestions")}
           </button>
@@ -1228,6 +1337,7 @@ function LibraryView({
                   next.add(suggestion.text);
                   setForm({ ...form, translations: [...next].join("; ") });
                 }}
+                data-tooltip={t("library.acceptSuggestion")}
               >
                 {suggestion.text}
                 <span className="rounded-full bg-black/10 px-1.5 text-[0.68rem]">{Math.round(suggestion.confidence * 100)}%</span>
@@ -1243,7 +1353,7 @@ function LibraryView({
                 ? "app-warning"
                 : "border-[color:var(--border-subtle)] bg-[var(--subpanel-bg)] app-muted"
           }`}
-          title={t("settings.usage")}
+          data-tooltip={t("settings.usage")}
         >
           <span>{t("settings.usage")}</span>
           <span className="font-semibold">
@@ -1268,7 +1378,7 @@ function LibraryView({
               required
             />
           </Label>
-          <button className="app-button app-button-primary" type="submit">
+          <button className="app-button app-button-primary" type="submit" data-tooltip={form.id ? t("common.save") : t("common.add")}>
             <Plus size={18} />
             {form.id ? t("common.save") : t("common.add")}
           </button>
@@ -1303,7 +1413,7 @@ function LibraryView({
           <Label text={t("common.search")}>
             <input className="app-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("library.searchPlaceholder")} />
           </Label>
-          <button className="app-button app-button-secondary" type="button" onClick={() => setShowFilters((visible) => !visible)}>
+          <button className="app-button app-button-secondary" type="button" onClick={() => setShowFilters((visible) => !visible)} data-tooltip={t("library.filters")}>
             <Search size={16} />
             {t("library.filters")}
           </button>
@@ -1351,11 +1461,11 @@ function LibraryView({
                 {word.notes ? <p className="app-subtle mt-1.5 text-xs leading-relaxed">{word.notes}</p> : null}
               </div>
               <div className="flex shrink-0 gap-1">
-                <button className="app-button app-button-secondary h-9 w-9 p-0" onClick={() => editWord(word)} aria-label={t("common.edit")}>
-                  <Edit2 size={18} />
+                <button className="app-button app-button-secondary app-icon-button" onClick={() => editWord(word)} aria-label={t("common.edit")} data-tooltip={t("common.edit")}>
+                  <Edit2 size={17} />
                 </button>
-                <button className="app-button app-button-danger h-9 w-9 p-0" onClick={() => deleteWord(word)} aria-label={t("common.delete")}>
-                  <Trash2 size={18} />
+                <button className="app-button app-button-danger app-icon-button" onClick={() => deleteWord(word)} aria-label={t("common.delete")} data-tooltip={t("common.delete")}>
+                  <Trash2 size={17} />
                 </button>
               </div>
             </div>
@@ -1488,25 +1598,31 @@ function DecksView({
     <section className="grid gap-4">
       <ViewTitle title={t("decks.title")} />
       <div className="grid gap-4 lg:grid-cols-2">
-        <form className="app-panel grid gap-3 p-4" onSubmit={addDeck}>
-          <h2 className="text-base font-semibold">{t("decks.createDeck")}</h2>
-          <Label text={t("decks.deckName")}>
-            <input className="app-input" value={deckName} onChange={(event) => setDeckName(event.target.value)} placeholder={t("decks.deckNamePlaceholder")} />
-          </Label>
-          <button className="app-button app-button-primary w-fit" type="submit">
-            <Plus size={18} />
-            {t("common.create")}
-          </button>
+        <form className="app-panel grid gap-2 p-3" onSubmit={addDeck}>
+          <h2 className="app-heading text-sm font-semibold">{t("decks.createDeck")}</h2>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <Label text={t("decks.deckName")}>
+              <input className="app-input app-input-compact" value={deckName} onChange={(event) => setDeckName(event.target.value)} placeholder={t("decks.deckNamePlaceholder")} />
+            </Label>
+            <button className="app-button app-button-primary app-button-compact w-fit" type="submit" data-tooltip={t("decks.createDeck")}>
+              <Plus size={16} />
+              {t("common.create")}
+            </button>
+          </div>
         </form>
 
         <form className="app-panel grid gap-3 p-4" onSubmit={addSubset}>
-          <h2 className="text-base font-semibold">{editingSubsetId ? t("decks.editSubset") : t("decks.createSubset")}</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="app-heading text-base font-semibold">{editingSubsetId ? t("decks.editSubset") : t("decks.createSubset")}</h2>
+            <span className="app-chip">{selectedWordIds.length} {t("decks.selectedWords")}</span>
+          </div>
           <Label text={t("decks.subsetName")}>
             <input className="app-input" value={subsetName} onChange={(event) => setSubsetName(event.target.value)} placeholder={t("decks.subsetNamePlaceholder")} />
           </Label>
-          <div className="app-subpanel max-h-52 overflow-auto p-2">
+          <div className="app-subpanel max-h-56 overflow-auto p-2">
+            {words.length === 0 ? <p className="app-muted p-2 text-sm">{t("library.noWords")}</p> : null}
             {words.map((word) => (
-              <label key={word.id} className="app-label flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-[var(--dropdown-hover-bg)]">
+              <label key={word.id} className="app-label grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--dropdown-hover-bg)]">
                 <input
                   type="checkbox"
                   checked={selectedWordIds.includes(word.id)}
@@ -1516,20 +1632,20 @@ function DecksView({
                     );
                   }}
                 />
-                {word.targetText}
+                <span className="truncate">{word.targetText}</span>
               </label>
             ))}
           </div>
           <div className="flex flex-wrap gap-2">
-          <button className="app-button app-button-primary" type="submit" disabled={selectedWordIds.length === 0}>
-            {editingSubsetId ? <Check size={18} /> : <Plus size={18} />}
-            {t("common.save")}
-          </button>
-          {editingSubsetId ? (
-            <button className="app-button app-button-ghost" type="button" onClick={cancelSubsetEdit}>
-              {t("common.cancel")}
+            <button className="app-button app-button-primary" type="submit" disabled={selectedWordIds.length === 0} data-tooltip={editingSubsetId ? t("common.save") : t("decks.createSubset")}>
+              {editingSubsetId ? <Check size={18} /> : <Plus size={18} />}
+              {t("common.save")}
             </button>
-          ) : null}
+            {editingSubsetId ? (
+              <button className="app-button app-button-ghost" type="button" onClick={cancelSubsetEdit} data-tooltip={t("common.cancel")}>
+                {t("common.cancel")}
+              </button>
+            ) : null}
           </div>
         </form>
       </div>
@@ -1537,17 +1653,17 @@ function DecksView({
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="grid gap-3">
           {decks.map((deck) => (
-            <article key={deck.id} className="app-panel p-4">
+            <article key={deck.id} className="app-panel px-3 py-2.5">
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold">{deck.name}</h3>
+                <div className="min-w-0">
+                  <h3 className="app-heading truncate font-semibold">{deck.name}</h3>
                   <p className="app-muted text-sm">{words.filter((word) => word.deckId === deck.id).length} {t("common.word")}</p>
                 </div>
-                <div className="flex gap-2">
-                  <button className="app-button app-button-secondary" onClick={() => renameDeck(deck)} aria-label={t("common.rename")}>
+                <div className="flex shrink-0 gap-1">
+                  <button className="app-button app-button-secondary app-icon-button" onClick={() => renameDeck(deck)} aria-label={t("common.rename")} data-tooltip={t("common.rename")}>
                     <Edit2 size={17} />
                   </button>
-                  <button className="app-button app-button-danger" onClick={() => deleteDeck(deck)} aria-label={t("common.delete")}>
+                  <button className="app-button app-button-danger app-icon-button" onClick={() => deleteDeck(deck)} aria-label={t("common.delete")} data-tooltip={t("common.delete")}>
                     <Trash2 size={17} />
                   </button>
                 </div>
@@ -1560,17 +1676,17 @@ function DecksView({
             <div className="app-muted rounded-xl border border-dashed border-[color:var(--border-default)] bg-[var(--subpanel-bg)] p-4">{t("decks.noSubsets")}</div>
           ) : null}
           {subsets.map((subset) => (
-            <article key={subset.id} className="app-panel p-4">
+            <article key={subset.id} className="app-panel px-3 py-2.5">
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold">{subset.name}</h3>
+                <div className="min-w-0">
+                  <h3 className="app-heading truncate font-semibold">{subset.name}</h3>
                   <p className="app-muted text-sm">{subset.wordIds.length} {t("decks.selectedWords")}</p>
                 </div>
-                <div className="flex gap-2">
-                  <button className="app-button app-button-secondary" onClick={() => editSubset(subset)} aria-label={t("common.edit")}>
+                <div className="flex shrink-0 gap-1">
+                  <button className="app-button app-button-secondary app-icon-button" onClick={() => editSubset(subset)} aria-label={t("common.edit")} data-tooltip={t("common.edit")}>
                     <Edit2 size={17} />
                   </button>
-                  <button className="app-button app-button-danger" onClick={() => deleteSubset(subset)} aria-label={t("common.delete")}>
+                  <button className="app-button app-button-danger app-icon-button" onClick={() => deleteSubset(subset)} aria-label={t("common.delete")} data-tooltip={t("common.delete")}>
                     <Trash2 size={17} />
                   </button>
                 </div>
@@ -1591,8 +1707,6 @@ function SettingsView({
   decks,
   words,
   usage,
-  theme,
-  onThemeChange,
   onRefresh,
   onStatus
 }: {
@@ -1603,8 +1717,6 @@ function SettingsView({
   decks: Deck[];
   words: WordEntry[];
   usage: TranslationUsage | null;
-  theme: ThemeMode;
-  onThemeChange: (theme: ThemeMode) => void;
   onRefresh: () => Promise<void>;
   onStatus: (message: string) => void;
 }) {
@@ -1646,11 +1758,6 @@ function SettingsView({
       cancelled = true;
     };
   }, [learningSetups]);
-
-  async function updateUiLanguage(value: LanguageCode) {
-    await db.profiles.update(profile.id, { uiLanguage: value, updatedAt: nowIso() });
-    await onRefresh();
-  }
 
   async function createAdditionalProfile(event: FormEvent) {
     event.preventDefault();
@@ -1881,40 +1988,13 @@ function SettingsView({
     <section className="grid min-w-0 gap-4">
       <ViewTitle title={t("settings.title")} />
       <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        <div className="app-panel grid min-w-0 gap-3 p-4">
-          <h2 className="app-heading text-base font-semibold">{t("settings.languages")}</h2>
-          <LanguageSelect label={t("profile.uiLanguage")} value={profile.uiLanguage} onChange={updateUiLanguage} />
-          <Label text={t("settings.theme")}>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                className={`app-button min-w-0 ${theme === "light" ? "app-button-primary" : "app-button-secondary"}`}
-                type="button"
-                onClick={() => onThemeChange("light")}
-                aria-pressed={theme === "light"}
-              >
-                <Sun size={16} />
-                {t("settings.themeLight")}
-              </button>
-              <button
-                className={`app-button min-w-0 ${theme === "dark" ? "app-button-primary" : "app-button-secondary"}`}
-                type="button"
-                onClick={() => onThemeChange("dark")}
-                aria-pressed={theme === "dark"}
-              >
-                <Moon size={16} />
-                {t("settings.themeDark")}
-              </button>
-            </div>
-          </Label>
-        </div>
-
         <form className="app-panel grid min-w-0 gap-3 p-4" onSubmit={createAdditionalProfile}>
           <h2 className="app-heading text-base font-semibold">{t("profile.createAnother")}</h2>
           <Label text={t("profile.name")}>
             <input className="app-input" value={newProfileName} onChange={(event) => setNewProfileName(event.target.value)} placeholder={t("profile.namePlaceholder")} />
           </Label>
           <p className="app-muted text-sm">{profiles.length} {t("profile.switch")}</p>
-          <button className="app-button app-button-primary w-fit" type="submit">
+          <button className="app-button app-button-primary w-fit" type="submit" data-tooltip={t("profile.createAnother")}>
             <Plus size={18} />
             {t("common.create")}
           </button>
@@ -1956,7 +2036,7 @@ function SettingsView({
               }}
             />
           </div>
-          <button className="app-button app-button-primary w-fit" type="submit">
+          <button className="app-button app-button-primary w-fit" type="submit" data-tooltip={t("setup.create")}>
             <Plus size={18} />
             {t("common.create")}
           </button>
@@ -1979,23 +2059,23 @@ function SettingsView({
                   </p>
                 </div>
                 <div className="setup-actions">
-                  <button className="app-button app-button-secondary" onClick={() => renameSetup(setup)} aria-label={t("common.rename")}>
+                  <button className="app-button app-button-secondary app-icon-button" onClick={() => renameSetup(setup)} aria-label={t("common.rename")} data-tooltip={t("common.rename")}>
                     <Edit2 size={17} />
                   </button>
                   <button
                     className="app-button app-button-secondary"
                     onClick={() => beginLanguageEdit(setup)}
                     disabled={(setupWordCounts[setup.id] ?? 0) > 0}
-                    title={(setupWordCounts[setup.id] ?? 0) > 0 ? t("setup.languagesLocked") : t("setup.editLanguages")}
+                    data-tooltip={(setupWordCounts[setup.id] ?? 0) > 0 ? t("setup.languagesLocked") : t("setup.editLanguages")}
                   >
                     {t("setup.editLanguages")}
                   </button>
                   <button
-                    className="app-button app-button-danger"
+                    className="app-button app-button-danger app-icon-button"
                     onClick={() => removeSetup(setup)}
                     aria-label={t("common.delete")}
                     disabled={learningSetups.length <= 1}
-                    title={learningSetups.length <= 1 ? t("setup.keepOne") : t("setup.delete")}
+                    data-tooltip={learningSetups.length <= 1 ? t("setup.keepOne") : t("setup.delete")}
                   >
                     <Trash2 size={17} />
                   </button>
@@ -2028,10 +2108,10 @@ function SettingsView({
                     />
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button className="app-button app-button-primary" onClick={() => saveSetupLanguages(setup)}>
+                    <button className="app-button app-button-primary" onClick={() => saveSetupLanguages(setup)} data-tooltip={t("common.save")}>
                       {t("common.save")}
                     </button>
-                    <button className="app-button app-button-ghost" onClick={() => setEditingSetupLanguagesId(null)}>
+                    <button className="app-button app-button-ghost" onClick={() => setEditingSetupLanguagesId(null)} data-tooltip={t("common.cancel")}>
                       {t("common.cancel")}
                     </button>
                   </div>
@@ -2067,30 +2147,31 @@ function SettingsView({
           onChange={(event) => void importCsvWords(event)}
         />
         <div className="settings-actions">
-          <button className="app-button app-button-secondary" onClick={() => void exportBackup()}>
+          <button className="app-button app-button-secondary" onClick={() => void exportBackup()} data-tooltip={t("settings.exportBackup")}>
             <Download size={18} />
             {t("settings.exportBackup")}
           </button>
-          <button className="app-button app-button-secondary" onClick={() => backupMergeInputRef.current?.click()}>
+          <button className="app-button app-button-secondary" onClick={() => backupMergeInputRef.current?.click()} data-tooltip={t("settings.importBackupMergeHint")}>
             <Plus size={18} />
             {t("settings.importBackupMerge")}
           </button>
-          <button className="app-button app-button-secondary" onClick={() => backupReplaceInputRef.current?.click()}>
+          <button className="app-button app-button-secondary" onClick={() => backupReplaceInputRef.current?.click()} data-tooltip={t("settings.importBackupReplaceHint")}>
             <RotateCcw size={18} />
             {t("settings.importBackupReplace")}
           </button>
-          <button className="app-button app-button-secondary" onClick={() => csvImportInputRef.current?.click()} disabled={!activeSetup}>
+          <button className="app-button app-button-secondary" onClick={() => csvImportInputRef.current?.click()} disabled={!activeSetup} data-tooltip={t("settings.importCsvHint")}>
             <Plus size={18} />
             {t("settings.importCsv")}
           </button>
           <button
             className="app-button app-button-secondary"
             onClick={() => downloadTextFile("lexora-export.csv", createCsvExport(words, decks), "text/csv")}
+            data-tooltip={t("library.exportCsv")}
           >
             <Download size={18} />
             {t("library.exportCsv")}
           </button>
-          <button className="app-button app-button-danger" onClick={resetData}>
+          <button className="app-button app-button-danger" onClick={resetData} data-tooltip={t("settings.resetWarning")}>
             <Trash2 size={18} />
             {t("settings.resetAll")}
           </button>
@@ -2118,37 +2199,53 @@ function SettingsView({
   );
 }
 
-function UsageBadge({ usage }: { usage: TranslationUsage | null }) {
+function UsageBadge({ usage, compact = false }: { usage: TranslationUsage | null; compact?: boolean }) {
   const { t } = useTranslation();
+  const tooltipId = useId();
   const count = usage?.count ?? 0;
   const remaining = Math.max(0, myMemoryDailyLimit - count);
   const percent = Math.min(100, Math.round((count / myMemoryDailyLimit) * 100));
 
   return (
-    <div className="app-warning w-full min-w-0 rounded-xl border px-3 py-2 text-sm" title={t("settings.usage")}>
-      <div className="flex items-center justify-between gap-2 font-semibold">
-        <span>{t("settings.usage")}</span>
-        <span>{percent}%</span>
+    <div
+      className={`app-warning usage-badge w-full min-w-0 rounded-xl border px-3 py-2 text-sm ${compact ? "status-badge-compact" : ""}`}
+      tabIndex={0}
+      aria-describedby={tooltipId}
+    >
+      <div className="flex min-w-0 items-center justify-between gap-2 font-semibold">
+        {compact ? (
+          <span className="usage-badge-icon" aria-label={t("settings.usage")}>
+            <Gauge size={15} />
+          </span>
+        ) : (
+          <span className="usage-badge-label">{t("settings.usage")}</span>
+        )}
+        <span className="shrink-0">{percent}%</span>
       </div>
-      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-black/10">
-        <div className="h-full bg-amber-400 transition-all duration-500" style={{ width: `${percent}%` }} />
+      <div className="usage-progress mt-1 h-1.5 overflow-hidden rounded-full">
+        <div className="usage-progress-fill h-full transition-all duration-500" style={{ width: `${percent}%` }} />
       </div>
       <p className="mt-1 text-xs opacity-75">{remaining} {t("settings.requestsRemaining")}</p>
+      <span id={tooltipId} className="tooltip-bubble" role="tooltip">
+        <span className="tooltip-title">{t("settings.usage")}</span>
+        <span>{count} / {myMemoryDailyLimit} {t("common.today")}</span>
+        <span>{remaining} {t("settings.requestsRemaining")}</span>
+      </span>
     </div>
   );
 }
 
-function ConnectionBadge({ online }: { online: boolean }) {
+function ConnectionBadge({ online, compact = false }: { online: boolean; compact?: boolean }) {
   const { t } = useTranslation();
 
   return (
     <div
-      className={`w-full min-w-0 rounded-xl border px-3 py-2 text-sm font-semibold ${
+      className={`w-full min-w-0 rounded-xl border px-3 py-2 text-sm font-semibold ${compact ? "status-badge-compact" : ""} ${
         online ? "app-success" : "app-danger-surface"
       }`}
       role="status"
       aria-live="polite"
-      title={online ? t("connection.onlineDetail") : t("connection.offlineDetail")}
+      data-tooltip={online ? t("connection.onlineDetail") : t("connection.offlineDetail")}
     >
       <span className="flex items-center gap-2">
         <span className={`h-2 w-2 rounded-full ${online ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" : "bg-rose-400"}`} aria-hidden="true" />
@@ -2262,13 +2359,24 @@ function DirectionPicker({
             role="radio"
             aria-checked={option.value === value}
             aria-label={option.label}
-            title={option.label}
+            data-tooltip={option.label}
             onClick={() => onChange(option.value)}
           >
             <span className="flex items-center justify-center gap-1">{option.flags}</span>
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function DueStatus({ count }: { count: number }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="due-status" data-tooltip={t("study.dueHint")} tabIndex={0}>
+      <span className="app-subtle text-xs font-semibold uppercase tracking-wide">{t("common.due")}</span>
+      <span className="app-heading text-lg font-bold">{count}</span>
     </div>
   );
 }
@@ -2342,7 +2450,7 @@ function LanguageSelect({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        title={selectedLabel}
+        data-tooltip={selectedLabel}
         onClick={() => setOpen((current) => !current)}
         onKeyDown={handleKeyDown}
       >
@@ -2381,6 +2489,176 @@ function LanguageSelect({
   );
 }
 
+function CompactLanguageSelect({
+  label,
+  value,
+  onChange,
+  iconOnly = false
+}: {
+  label?: string;
+  value: LanguageCode;
+  onChange: (value: LanguageCode) => void;
+  iconOnly?: boolean;
+}) {
+  const { i18n } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const selectedIndex = Math.max(0, languageCodes.findIndex((code) => code === value));
+
+  function selectByIndex(index: number) {
+    const next = languageCodes[index];
+    if (next) {
+      onChange(next);
+    }
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setOpen((current) => !current);
+      return;
+    }
+
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      return;
+    }
+
+    event.preventDefault();
+    setOpen(true);
+
+    if (event.key === "Home") {
+      selectByIndex(0);
+      return;
+    }
+
+    if (event.key === "End") {
+      selectByIndex(languageCodes.length - 1);
+      return;
+    }
+
+    const offset = event.key === "ArrowDown" ? 1 : -1;
+    selectByIndex((selectedIndex + offset + languageCodes.length) % languageCodes.length);
+  }
+
+  return (
+    <div className="relative grid min-w-0 gap-1" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
+      {label && !iconOnly ? <span className="app-label text-sm font-semibold">{label}</span> : null}
+      <button
+        className={`${
+          iconOnly
+            ? "app-icon-select"
+            : "app-input app-input-compact flex min-h-9 min-w-0 items-center justify-between gap-2 text-left"
+        }`}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        data-tooltip={languageOptionLabel(value, i18n.language)}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={handleKeyDown}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <FlagIcon code={value} />
+          {iconOnly ? null : <span className="truncate">{languageOptionLabel(value, i18n.language)}</span>}
+        </span>
+        <ChevronRight className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} size={iconOnly ? 14 : 15} />
+      </button>
+      {open ? (
+        <div
+          className={`app-panel absolute top-full z-40 mt-1 max-h-64 overflow-auto p-1 ${
+            iconOnly ? "right-0 w-56" : "w-full"
+          }`}
+          role="listbox"
+        >
+          {languageCodes.map((code) => (
+            <button
+              key={code}
+              className={`dropdown-option flex w-full min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm ${
+                code === value ? "dropdown-option-active" : ""
+              }`}
+              type="button"
+              role="option"
+              aria-selected={code === value}
+              onClick={() => {
+                onChange(code);
+                setOpen(false);
+              }}
+            >
+              <FlagIcon code={code} />
+              <span className="truncate">{languageOptionLabel(code, i18n.language)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ThemeToggle({
+  value,
+  onChange,
+  compact = false
+}: {
+  value: ThemeMode;
+  onChange: (value: ThemeMode) => void;
+  compact?: boolean;
+}) {
+  const { t } = useTranslation();
+  const nextTheme = value === "dark" ? "light" : "dark";
+
+  return (
+    <div className={compact ? "min-w-0" : "grid min-w-0 gap-1"}>
+      {compact ? null : <span className="app-label text-sm font-semibold">{t("settings.theme")}</span>}
+      <button
+        className={`theme-toggle ${compact ? "theme-toggle-compact" : ""}`}
+        type="button"
+        role="switch"
+        aria-checked={value === "dark"}
+        data-tooltip={value === "dark" ? t("settings.themeDark") : t("settings.themeLight")}
+        onClick={() => onChange(nextTheme)}
+      >
+        <span className="theme-toggle-track" aria-hidden="true">
+          <span className="theme-toggle-thumb">
+          {value === "dark" ? <Moon size={14} /> : <Sun size={14} />}
+        </span>
+      </span>
+        {compact ? null : <span className="theme-toggle-label">
+          {value === "dark" ? t("settings.themeDark") : t("settings.themeLight")}
+        </span>}
+      </button>
+    </div>
+  );
+}
+
+function ChromePreferences({
+  uiLanguage,
+  theme,
+  onLanguageChange,
+  onThemeChange
+}: {
+  uiLanguage: LanguageCode;
+  theme: ThemeMode;
+  onLanguageChange: (value: LanguageCode) => void;
+  onThemeChange: (value: ThemeMode) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="chrome-preferences" aria-label={t("settings.preferences")}>
+      <CompactLanguageSelect
+        label={t("profile.uiLanguage")}
+        value={uiLanguage}
+        onChange={onLanguageChange}
+        iconOnly
+      />
+      <ThemeToggle value={theme} onChange={onThemeChange} compact />
+    </div>
+  );
+}
+
 function Label({ text, children }: { text: React.ReactNode; children: React.ReactNode }) {
   return (
     <label className="app-label grid min-w-0 gap-1 text-sm font-semibold">
@@ -2390,9 +2668,9 @@ function Label({ text, children }: { text: React.ReactNode; children: React.Reac
   );
 }
 
-function HeaderSelect({ label, children }: { label: string; children: React.ReactNode }) {
+function HeaderSelect({ label, children, tooltip }: { label: string; children: React.ReactNode; tooltip?: string }) {
   return (
-    <label className="app-subtle grid min-w-0 gap-1 text-xs font-semibold uppercase tracking-wide">
+    <label className="app-subtle grid min-w-0 gap-1 text-xs font-semibold uppercase tracking-wide" data-tooltip={tooltip}>
       <span className="truncate">{label}</span>
       {children}
     </label>
@@ -2468,7 +2746,7 @@ function LearningSetupSelect({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        title={selected ? `${learningSetupDisplayName(selected, locale)} · ${setupBaseContext(selected.baseLanguage, locale, t("setup.baseShort"))}` : label}
+        data-tooltip={selected ? `${learningSetupDisplayName(selected, locale)} · ${setupBaseContext(selected.baseLanguage, locale, t("setup.baseShort"))}` : label}
         onClick={() => setOpen((current) => !current)}
         onKeyDown={handleKeyDown}
       >
@@ -2529,7 +2807,7 @@ function ViewTitle({ title }: { title: string }) {
 
 function Metric({ label, value, compact = false, hint }: { label: string; value: string; compact?: boolean; hint?: string }) {
   return (
-    <div className={`app-panel ${compact ? "p-3" : "p-4"}`} title={hint}>
+    <div className={`app-panel ${compact ? "p-3" : "p-4"}`} data-tooltip={hint} tabIndex={hint ? 0 : undefined}>
       <p className="app-muted text-sm font-semibold">{label}</p>
       <p className="app-heading text-2xl font-bold">{value}</p>
       {hint ? <p className="app-subtle mt-1 text-xs leading-relaxed">{hint}</p> : null}
@@ -2556,7 +2834,7 @@ function NavButton({
           : "nav-button-inactive"
       }`}
       onClick={onClick}
-      title={label}
+      data-tooltip={label}
     >
       {icon}
       {label}

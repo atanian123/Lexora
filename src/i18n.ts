@@ -11,6 +11,7 @@ const en = {
     library: "Library",
     decks: "Decks",
     settings: "Settings",
+    menu: "Menu",
     openMenu: "Open menu",
     closeMenu: "Close menu"
   },
@@ -162,6 +163,7 @@ const en = {
   settings: {
     title: "Settings",
     languages: "Languages",
+    preferences: "Preferences",
     theme: "Theme",
     themeLight: "Light",
     themeDark: "Dark",
@@ -199,7 +201,7 @@ const en = {
 
 const de = {
   app: { tagline: "Offline-Vokabeltraining", installable: "PWA bereit" },
-  nav: { study: "Üben", library: "Bibliothek", decks: "Stapel", settings: "Einstellungen", openMenu: "Menü öffnen", closeMenu: "Menü schließen" },
+  nav: { study: "Üben", library: "Bibliothek", decks: "Stapel", settings: "Einstellungen", menu: "Menü", openMenu: "Menü öffnen", closeMenu: "Menü schließen" },
   common: {
     add: "Hinzufügen",
     cancel: "Abbrechen",
@@ -348,6 +350,7 @@ const de = {
   settings: {
     title: "Einstellungen",
     languages: "Sprachen",
+    preferences: "Einstellungen",
     theme: "Design",
     themeLight: "Hell",
     themeDark: "Dunkel",
@@ -385,7 +388,7 @@ const de = {
 
 const fr = {
   app: { tagline: "Entraînement de vocabulaire hors ligne", installable: "PWA prête" },
-  nav: { study: "Réviser", library: "Bibliothèque", decks: "Paquets", settings: "Réglages", openMenu: "Ouvrir le menu", closeMenu: "Fermer le menu" },
+  nav: { study: "Réviser", library: "Bibliothèque", decks: "Paquets", settings: "Réglages", menu: "Menu", openMenu: "Ouvrir le menu", closeMenu: "Fermer le menu" },
   common: {
     add: "Ajouter",
     cancel: "Annuler",
@@ -534,6 +537,7 @@ const fr = {
   settings: {
     title: "Réglages",
     languages: "Langues",
+    preferences: "Préférences",
     theme: "Thème",
     themeLight: "Clair",
     themeDark: "Sombre",
@@ -571,7 +575,7 @@ const fr = {
 
 const it = {
   app: { tagline: "Pratica del vocabolario offline", installable: "PWA pronta" },
-  nav: { study: "Studia", library: "Biblioteca", decks: "Mazzi", settings: "Impostazioni", openMenu: "Apri menu", closeMenu: "Chiudi menu" },
+  nav: { study: "Studia", library: "Biblioteca", decks: "Mazzi", settings: "Impostazioni", menu: "Menu", openMenu: "Apri menu", closeMenu: "Chiudi menu" },
   common: {
     add: "Aggiungi",
     cancel: "Annulla",
@@ -720,6 +724,7 @@ const it = {
   settings: {
     title: "Impostazioni",
     languages: "Lingue",
+    preferences: "Preferenze",
     theme: "Tema",
     themeLight: "Chiaro",
     themeDark: "Scuro",
@@ -757,7 +762,7 @@ const it = {
 
 const es = {
   app: { tagline: "Práctica de vocabulario sin conexión", installable: "PWA lista" },
-  nav: { study: "Practicar", library: "Biblioteca", decks: "Mazos", settings: "Ajustes", openMenu: "Abrir menú", closeMenu: "Cerrar menú" },
+  nav: { study: "Practicar", library: "Biblioteca", decks: "Mazos", settings: "Ajustes", menu: "Menú", openMenu: "Abrir menú", closeMenu: "Cerrar menú" },
   common: {
     add: "Añadir",
     cancel: "Cancelar",
@@ -906,6 +911,7 @@ const es = {
   settings: {
     title: "Ajustes",
     languages: "Idiomas",
+    preferences: "Preferencias",
     theme: "Tema",
     themeLight: "Claro",
     themeDark: "Oscuro",
@@ -943,7 +949,7 @@ const es = {
 
 const pt = {
   app: { tagline: "Prática de vocabulário offline", installable: "PWA pronta" },
-  nav: { study: "Estudar", library: "Biblioteca", decks: "Baralhos", settings: "Definições", openMenu: "Abrir menu", closeMenu: "Fechar menu" },
+  nav: { study: "Estudar", library: "Biblioteca", decks: "Baralhos", settings: "Definições", menu: "Menu", openMenu: "Abrir menu", closeMenu: "Fechar menu" },
   common: {
     add: "Adicionar",
     cancel: "Cancelar",
@@ -1092,6 +1098,7 @@ const pt = {
   settings: {
     title: "Definições",
     languages: "Idiomas",
+    preferences: "Preferências",
     theme: "Tema",
     themeLight: "Claro",
     themeDark: "Escuro",
@@ -1129,7 +1136,7 @@ const pt = {
 
 const ru = {
   app: { tagline: "Офлайн-тренировка словаря", installable: "PWA готово" },
-  nav: { study: "Учить", library: "Библиотека", decks: "Колоды", settings: "Настройки", openMenu: "Открыть меню", closeMenu: "Закрыть меню" },
+  nav: { study: "Учить", library: "Библиотека", decks: "Колоды", settings: "Настройки", menu: "Меню", openMenu: "Открыть меню", closeMenu: "Закрыть меню" },
   common: {
     add: "Добавить",
     cancel: "Отмена",
@@ -1278,6 +1285,7 @@ const ru = {
   settings: {
     title: "Настройки",
     languages: "Языки",
+    preferences: "Предпочтения",
     theme: "Тема",
     themeLight: "Светлая",
     themeDark: "Темная",
