@@ -1,7 +1,7 @@
 # Lexora — Requirements Document
 
-**Version:** 1.1  
-**Date:** 2026-06-16  
+**Version:** 1.2  
+**Date:** 2026-06-17  
 **Status:** Draft
 
 ---
@@ -18,6 +18,7 @@
    - 2.6 [Exercise / Flashcard Mode](#26-exercise--flashcard-mode)
    - 2.7 [Spaced Repetition](#27-spaced-repetition)
    - 2.8 [User Profiles](#28-user-profiles)
+   - 2.9 [Data Portability](#29-data-portability)
 3. [Non-Functional Requirements](#3-non-functional-requirements)
    - 3.1 [Platform & Installability](#31-platform--installability)
    - 3.2 [Offline Support](#32-offline-support)
@@ -170,6 +171,18 @@ interface TranslationResult {
 
 ---
 
+### 2.9 Data Portability
+
+| ID | Requirement |
+|----|-------------|
+| FR-53 | The user can export a full Lexora backup as JSON, including profiles, learning setups, decks, words, custom subsets, per-direction SRS card state, and translation usage metadata. |
+| FR-54 | The user can import a Lexora JSON backup in **merge** mode. Existing records with the same IDs are updated; unrelated local records are preserved. |
+| FR-55 | The user can restore a Lexora JSON backup in **replace** mode after confirmation. This clears local Lexora data on the device and replaces it with the backup contents. |
+| FR-56 | The user can import a CSV word list into the active learning setup. Supported columns include target text, translations, deck, and notes; duplicates by target text in the active setup are skipped. |
+| FR-57 | Direct Duolingo account connection is not part of phase 1 because there is no stable official vocabulary import API available for browser-direct use. Duolingo-derived word lists may be imported through the generic CSV path if the user obtains an export elsewhere. |
+
+---
+
 ## 3. Non-Functional Requirements
 
 ### 3.1 Platform & Installability
@@ -242,7 +255,7 @@ interface TranslationResult {
 | NFR-22 | All user data (words, progress, profiles) is stored **locally on the device** in phase 1. Nothing is sent to any server except translation API requests. |
 | NFR-23 | Translation API calls send **only the word/phrase text** and the language pair — no user identity or profile data. |
 | NFR-24 | No analytics, tracking scripts, or third-party SDKs are included in phase 1. |
-| NFR-25 | The user can **export** their word library as JSON or CSV for backup or migration. |
+| NFR-25 | The user can **export and import** data for backup or migration: full JSON backup/restore for all local Lexora data, plus CSV word-list import/export for active learning setups. |
 | NFR-26 | The user can **delete** all local data (full reset) from settings. |
 
 ---
@@ -295,6 +308,7 @@ The following features are explicitly deferred to later phases:
 |---------|-------|
 | Cloud sync & multi-device | 2 |
 | User authentication | 2 |
+| Direct Duolingo account integration | 2 / TBD |
 | Public sharing of decks | 2 |
 | Text-to-speech (listen to word pronunciation) | 3 |
 | Speech-to-text (speak the answer) | 3 |
@@ -353,7 +367,7 @@ Phase 1 targets the complete scope defined in this document. Implementation shou
 |----------|------|----------------|
 | 1. Foundation | Establish the installable local-first application shell. | React 19 + Vite + TypeScript, Tailwind CSS, PWA manifest/service worker, i18next setup, routing/layout, accessibility baseline. |
 | 2. Local data model | Implement durable offline storage and profile/setup boundaries. | Dexie schema/versioning, first-launch profile creation, profile switcher, app-language preference, learning setup CRUD, active setup selection, default deck creation per setup, Dexie Cloud-ready identifiers. |
-| 3. Library management | Build the core vocabulary management workflow. | Setup-scoped deck CRUD, saved custom subset CRUD, add/edit/delete words and phrases, multiple accepted translations, notes, search/filter, export JSON/CSV, full local reset. |
+| 3. Library management and data portability | Build the core vocabulary management workflow and local migration tools. | Setup-scoped deck CRUD, saved custom subset CRUD, add/edit/delete words and phrases, multiple accepted translations, notes, search/filter, full JSON backup export/import, CSV word import/export, full local reset. |
 | 4. Translation layer | Add provider-based translation suggestions with graceful offline fallback. | Translation provider interface, MyMemory provider, local daily request counter shared across profiles, usage indicator, manual translation path. |
 | 5. Exercise engine | Deliver the flashcard study loop. | Scope selection, direction selection, typed answers, 1-character fuzzy matching, close-answer handling, self-rating, pause/abandon, session summary. |
 | 6. FSRS scheduling | Integrate spaced repetition behavior. | `ts-fsrs` integration, per-direction card state, due queues, Again re-queueing, difficult-card surfacing, long-term retention behavior. |

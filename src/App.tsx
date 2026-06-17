@@ -15,7 +15,7 @@ import {
   Volume2,
   X
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type CardDirection,
@@ -43,6 +43,7 @@ import {
 } from "./lib/constants";
 import {
   createLearningSetup,
+  createInitialCardState,
   createProfile,
   db,
   deleteDeckWithWords,
@@ -51,7 +52,13 @@ import {
   ensureDefaultDeck,
   resetAllLocalData
 } from "./lib/db";
-import { createCsvExport, createJsonExport, downloadTextFile } from "./lib/export";
+import {
+  createBackupExport,
+  createCsvExport,
+  downloadTextFile,
+  parseLexoraBackup,
+  parseWordCsv
+} from "./lib/export";
 import { createId, nowIso } from "./lib/ids";
 import { evaluateAnswer, type MatchResult } from "./lib/matching";
 import { scheduleReview } from "./lib/srs";
@@ -83,6 +90,7 @@ interface SessionState {
   revealed: boolean;
   match?: MatchResult;
   closeAccepted: boolean;
+  selectedRating?: ReviewRating;
   paused: boolean;
 }
 
@@ -414,7 +422,6 @@ export default function App() {
             activeSetup={activeSetup}
             decks={decks}
             words={words}
-            subsets={subsets}
             usage={usage}
             onRefresh={refreshAll}
             onStatus={setStatus}
@@ -566,6 +573,9 @@ function StudyView({
   const [direction, setDirection] = useState<StudyDirection>("mixed");
   const [session, setSession] = useState<SessionState | null>(null);
   const [allowFuture, setAllowFuture] = useState(false);
+  const answerInputRef = useRef<HTMLInputElement>(null);
+  const nextButtonRef = useRef<HTMLButtonElement>(null);
+  const advancingRef = useRef(false);
 
   const activePairWords = useMemo(() => words.filter((word) => word.learningSetupId === setup.id), [setup.id, words]);
   const activePairWordIds = useMemo(() => new Set(activePairWords.map((word) => word.id)), [activePairWords]);
@@ -628,15 +638,16 @@ function StudyView({
 
     const accepted = getAcceptedAnswers(session.current);
     const match = evaluateAnswer(session.answer, accepted);
-    setSession({ ...session, revealed: true, match });
+    setSession({ ...session, revealed: true, match, selectedRating: defaultRatingForMatch(match, false) });
   }
 
-  async function rateCurrent(rating: ReviewRating) {
+  async function rateCurrent(rating = session?.selectedRating) {
     if (!session?.current) {
       return;
     }
+    const selectedRating = rating ?? defaultRatingForMatch(session.match ?? "wrong", session.closeAccepted);
 
-    const scheduled = scheduleReview(session.current.card, rating);
+    const scheduled = scheduleReview(session.current.card, selectedRating);
     await db.cards.update(session.current.card.id, scheduled);
 
     const wasCorrect = session.match === "correct" || (session.match === "close" && session.closeAccepted);
@@ -645,7 +656,7 @@ function StudyView({
     const streak = wasCorrect ? session.streak + 1 : 0;
     const nextQueue = [...session.queue];
 
-    if (rating === "again") {
+    if (selectedRating === "again") {
       nextQueue.push({
         ...session.current,
         card: {
@@ -666,11 +677,61 @@ function StudyView({
       answer: "",
       revealed: false,
       closeAccepted: false,
+      selectedRating: undefined,
       paused: false
     });
 
     await onRefresh();
   }
+
+  async function advanceStudyCard() {
+    if (!session?.revealed || advancingRef.current) {
+      return;
+    }
+
+    advancingRef.current = true;
+    try {
+      await rateCurrent(session.selectedRating ?? defaultRatingForMatch(session.match ?? "wrong", session.closeAccepted));
+    } finally {
+      advancingRef.current = false;
+    }
+  }
+
+  useEffect(() => {
+    if (session?.revealed) {
+      nextButtonRef.current?.focus();
+    }
+  }, [session?.revealed, session?.current?.card.id]);
+
+  useEffect(() => {
+    if (session?.current && !session.revealed && !session.paused) {
+      answerInputRef.current?.focus();
+    }
+  }, [session?.current?.card.id, session?.revealed, session?.paused]);
+
+  useEffect(() => {
+    if (!session?.revealed) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.repeat) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      const inputTarget = target?.closest("input") as HTMLInputElement | null;
+      if (target?.closest("button, a, select, textarea, [contenteditable='true']") || (inputTarget && !inputTarget.disabled)) {
+        return;
+      }
+
+      event.preventDefault();
+      void advanceStudyCard();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [session?.revealed, session?.selectedRating, session?.closeAccepted, session?.match, session?.current?.card.id]);
 
   if (session?.paused) {
     return (
@@ -681,10 +742,14 @@ function StudyView({
             {session.reviewed} {t("study.reviewed")} · {session.queue.length + (session.current ? 1 : 0)} {t("study.remaining")}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <button className="app-button app-button-primary" onClick={() => setSession({ ...session, paused: false })}>
+            <button
+              className="app-button app-button-primary"
+              onClick={() => setSession({ ...session, paused: false })}
+              title={t("study.resumeHint")}
+            >
               {t("study.resume")}
             </button>
-            <button className="app-button app-button-ghost" onClick={() => setSession(null)}>
+            <button className="app-button app-button-ghost" onClick={() => setSession(null)} title={t("study.abandonHint")}>
               {t("study.abandon")}
             </button>
           </div>
@@ -695,25 +760,38 @@ function StudyView({
 
   if (session && !session.current) {
     const accuracy = session.reviewed === 0 ? 0 : Math.round((session.correct / session.reviewed) * 100);
+    if (session.reviewed === 0) {
+      return (
+        <section className="grid gap-4">
+          <ViewTitle title={t("study.noDueTitle")} />
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950">
+            <p className="font-semibold">{t("study.noCards")}</p>
+            <p className="mt-1 text-sm">{t("study.noDueBody")}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button className="app-button app-button-secondary" onClick={() => startSession(true)} title={t("study.practiceAnywayHint")}>
+                <RotateCcw size={18} />
+                {t("study.includeFuture")}
+              </button>
+              <button className="app-button app-button-ghost" onClick={() => setSession(null)}>
+                {t("study.backToStudy")}
+              </button>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
     return (
       <section className="grid gap-4">
         <ViewTitle title={t("study.summary")} />
+        <p className="text-sm text-slate-600">{t("study.summaryBody")}</p>
         <div className="grid gap-3 sm:grid-cols-3">
-          <Metric label={t("study.reviewed")} value={session.reviewed.toString()} />
-          <Metric label={t("study.accuracy")} value={`${accuracy}%`} />
-          <Metric label={t("study.streak")} value={session.bestStreak.toString()} />
+          <Metric label={t("study.reviewed")} value={session.reviewed.toString()} hint={t("study.reviewedHint")} />
+          <Metric label={t("study.accuracy")} value={`${accuracy}%`} hint={t("study.accuracyHint")} />
+          <Metric label={t("study.streak")} value={session.bestStreak.toString()} hint={t("study.streakHint")} />
         </div>
-        {session.reviewed === 0 ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950">
-            <p className="font-semibold">{t("study.noCards")}</p>
-            <button className="app-button app-button-secondary mt-3" onClick={() => startSession(true)}>
-              <RotateCcw size={18} />
-              {t("study.includeFuture")}
-            </button>
-          </div>
-        ) : null}
-        <button className="app-button app-button-primary w-fit" onClick={() => setSession(null)}>
-          {t("study.start")}
+        <button className="app-button app-button-primary w-fit" onClick={() => setSession(null)} title={t("study.backToStudyHint")}>
+          {t("study.backToStudy")}
         </button>
       </section>
     );
@@ -722,15 +800,29 @@ function StudyView({
   if (session?.current) {
     const prompt = getPrompt(session.current);
     const accepted = getAcceptedAnswers(session.current);
+    const resultTone =
+      session.match === "correct" || (session.match === "close" && session.closeAccepted)
+        ? "correct"
+        : session.match === "close"
+          ? "close"
+          : "wrong";
+    const resultPanelClass =
+      resultTone === "correct"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-950 shadow-[0_0_0_1px_rgba(16,185,129,0.08),0_12px_30px_rgba(16,185,129,0.12)]"
+        : resultTone === "wrong"
+          ? "border-rose-200 bg-rose-50 text-rose-950 shadow-[0_0_0_1px_rgba(244,63,94,0.08),0_12px_30px_rgba(244,63,94,0.12)]"
+          : "border-amber-200 bg-amber-50 text-amber-950 shadow-[0_0_0_1px_rgba(245,158,11,0.08),0_12px_30px_rgba(245,158,11,0.12)]";
+    const resultLabelClass =
+      resultTone === "correct" ? "text-emerald-700" : resultTone === "wrong" ? "text-rose-700" : "text-amber-700";
     return (
       <section className="grid gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <ViewTitle title={t("study.title")} />
           <div className="flex flex-wrap gap-2">
-            <button className="app-button app-button-secondary" onClick={() => setSession({ ...session, paused: true })}>
+            <button className="app-button app-button-secondary" onClick={() => setSession({ ...session, paused: true })} title={t("study.pauseHint")}>
               {t("study.pause")}
             </button>
-            <button className="app-button app-button-ghost" onClick={() => setSession(null)}>
+            <button className="app-button app-button-ghost" onClick={() => setSession(null)} title={t("study.abandonHint")}>
               {t("study.abandon")}
             </button>
           </div>
@@ -760,10 +852,13 @@ function StudyView({
               placeholder={t("study.answerPlaceholder")}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !session.revealed) {
+                  event.preventDefault();
+                  event.stopPropagation();
                   submitAnswer();
                 }
               }}
               disabled={session.revealed}
+              ref={answerInputRef}
               autoFocus
             />
           </Label>
@@ -774,35 +869,61 @@ function StudyView({
             </button>
           ) : (
             <div className="mt-5 grid gap-4">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="text-sm font-semibold text-slate-600">{t("study.reveal")}</p>
-                <p className="mt-1 text-lg font-semibold">{accepted.join(" / ")}</p>
-                <p className="mt-2 text-sm font-semibold">
+              <div className={`rounded-lg border p-3 ${resultPanelClass}`}>
+                <p className={`text-sm font-semibold ${resultLabelClass}`}>
                   {session.match === "correct" ? t("study.correctAnswer") : null}
                   {session.match === "close" ? t("study.closeAnswer") : null}
                   {session.match === "wrong" ? t("study.wrongAnswer") : null}
                 </p>
+                <p className="mt-2 text-sm font-semibold opacity-75">{t("study.reveal")}</p>
+                <p className="mt-1 text-lg font-semibold">{accepted.join(" / ")}</p>
                 {session.match === "close" ? (
                   <label className="mt-3 flex items-center gap-2 text-sm font-semibold">
                     <input
                       type="checkbox"
                       checked={session.closeAccepted}
-                      onChange={(event) => setSession({ ...session, closeAccepted: event.target.checked })}
+                      onChange={(event) =>
+                        setSession({
+                          ...session,
+                          closeAccepted: event.target.checked,
+                          selectedRating: defaultRatingForMatch(session.match ?? "wrong", event.target.checked)
+                        })
+                      }
                     />
                     {t("study.acceptClose")}
                   </label>
                 ) : null}
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <p className="text-sm text-slate-600">{t("study.ratingHelp")}</p>
+              <div className="grid grid-cols-4 gap-1.5 sm:w-fit">
                 {ratings.map((rating) => (
                   <button
                     key={rating}
-                    className={`app-button ${rating === "again" ? "app-button-danger" : "app-button-secondary"}`}
-                    onClick={() => rateCurrent(rating)}
+                    className={`app-button min-h-9 px-2 py-1 text-xs ${
+                      session.selectedRating === rating
+                        ? rating === "again"
+                          ? "app-button-danger"
+                          : "app-button-primary"
+                        : "app-button-secondary"
+                    }`}
+                    onClick={() => setSession({ ...session, selectedRating: rating })}
+                    title={`${t(`study.${rating}`)}: ${t(`study.${rating}Hint`)}`}
+                    type="button"
                   >
                     {t(`study.${rating}`)}
                   </button>
                 ))}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-slate-500">
+                  {t("study.selectedRating", {
+                    rating: t(`study.${session.selectedRating ?? "again"}`),
+                    hint: t(`study.${session.selectedRating ?? "again"}Hint`)
+                  })}
+                </p>
+                <button className="app-button app-button-primary" onClick={() => void advanceStudyCard()} type="button" ref={nextButtonRef}>
+                  {t("study.next")}
+                </button>
               </div>
             </div>
           )}
@@ -815,13 +936,14 @@ function StudyView({
     <section className="grid gap-4">
       <ViewTitle title={t("study.title")} />
       <div className="app-panel grid gap-3 p-4">
+        <p className="text-sm text-slate-600">{t("study.setupHelp")}</p>
         <div className="grid gap-4 md:grid-cols-3">
           <ScopeSelect scope={scope} setScope={setScope} decks={decks} subsets={subsets} />
           <DirectionPicker value={direction} setup={setup} onChange={setDirection} />
-          <Metric label={t("common.due")} value={dueCount.toString()} compact />
+          <Metric label={t("common.due")} value={dueCount.toString()} compact hint={t("study.dueHint")} />
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="app-button app-button-primary" onClick={() => startSession(false)} disabled={activePairWords.length === 0}>
+          <button className="app-button app-button-primary" onClick={() => startSession(false)} disabled={activePairWords.length === 0} title={t("study.startHint")}>
             <ChevronRight size={18} />
             {t("study.start")}
           </button>
@@ -832,6 +954,7 @@ function StudyView({
               void startSession(true);
             }}
             disabled={activePairWords.length === 0 || allowFuture}
+            title={t("study.practiceAnywayHint")}
           >
             <RotateCcw size={18} />
             {t("study.includeFuture")}
@@ -1440,7 +1563,6 @@ function SettingsView({
   activeSetup,
   decks,
   words,
-  subsets,
   usage,
   onRefresh,
   onStatus
@@ -1451,12 +1573,14 @@ function SettingsView({
   activeSetup: LearningSetup | null;
   decks: Deck[];
   words: WordEntry[];
-  subsets: CustomSubset[];
   usage: TranslationUsage | null;
   onRefresh: () => Promise<void>;
   onStatus: (message: string) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const backupMergeInputRef = useRef<HTMLInputElement>(null);
+  const backupReplaceInputRef = useRef<HTMLInputElement>(null);
+  const csvImportInputRef = useRef<HTMLInputElement>(null);
   const [newProfileName, setNewProfileName] = useState("");
   const [setupName, setSetupName] = useState("");
   const [setupBaseLanguage, setSetupBaseLanguage] = useState<LanguageCode>(activeSetup?.baseLanguage ?? "de");
@@ -1574,6 +1698,152 @@ function SettingsView({
     await resetAllLocalData();
     localStorage.removeItem(activeProfileStorageKey);
     await onRefresh();
+  }
+
+  async function exportBackup() {
+    const [allProfiles, allSetups, allDecks, allWords, allSubsets, allCards, allUsage] = await Promise.all([
+      db.profiles.toArray(),
+      db.learningSetups.toArray(),
+      db.decks.toArray(),
+      db.words.toArray(),
+      db.subsets.toArray(),
+      db.cards.toArray(),
+      db.translationUsage.toArray()
+    ]);
+
+    downloadTextFile(
+      "lexora-backup.json",
+      createBackupExport(allProfiles, allSetups, allDecks, allWords, allSubsets, allCards, allUsage),
+      "application/json"
+    );
+  }
+
+  async function importBackup(event: ChangeEvent<HTMLInputElement>, mode: "merge" | "replace") {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    if (mode === "replace" && !window.confirm(`${t("settings.importBackupReplace")}\n\n${t("settings.importBackupReplaceWarning")}`)) {
+      return;
+    }
+
+    try {
+      const backup = parseLexoraBackup(await file.text());
+      await db.transaction("rw", [db.profiles, db.learningSetups, db.decks, db.words, db.subsets, db.cards, db.translationUsage], async () => {
+        if (mode === "replace") {
+          await Promise.all([
+            db.profiles.clear(),
+            db.learningSetups.clear(),
+            db.decks.clear(),
+            db.words.clear(),
+            db.subsets.clear(),
+            db.cards.clear(),
+            db.translationUsage.clear()
+          ]);
+        }
+
+        await Promise.all([
+          backup.profiles.length ? db.profiles.bulkPut(backup.profiles) : Promise.resolve(),
+          backup.learningSetups.length ? db.learningSetups.bulkPut(backup.learningSetups) : Promise.resolve(),
+          backup.decks.length ? db.decks.bulkPut(backup.decks) : Promise.resolve(),
+          backup.words.length ? db.words.bulkPut(backup.words) : Promise.resolve(),
+          backup.subsets.length ? db.subsets.bulkPut(backup.subsets) : Promise.resolve(),
+          backup.cards.length ? db.cards.bulkPut(backup.cards) : Promise.resolve(),
+          backup.translationUsage.length ? db.translationUsage.bulkPut(backup.translationUsage) : Promise.resolve()
+        ]);
+      });
+
+      localStorage.setItem(activeProfileStorageKey, backup.profiles[0].id);
+      onStatus(t("status.imported", { count: backup.words.length }));
+      await onRefresh();
+    } catch {
+      onStatus(t("status.importFailed"));
+    }
+  }
+
+  async function importCsvWords(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !activeSetup) {
+      return;
+    }
+
+    try {
+      const importedRows = parseWordCsv(await file.text());
+      const timestamp = nowIso();
+      const existingDecks = await db.decks.where("learningSetupId").equals(activeSetup.id).toArray();
+      const defaultDeck = existingDecks[0] ?? (await ensureDefaultDeck(profile.id, activeSetup.id, activeSetup.baseLanguage));
+      const decksByName = new Map(existingDecks.map((deck) => [deck.name.trim().toLocaleLowerCase(), deck]));
+      decksByName.set(defaultDeck.name.trim().toLocaleLowerCase(), defaultDeck);
+
+      const newDecks: Deck[] = [];
+      const deckForName = (name: string): Deck => {
+        const normalized = name.trim().toLocaleLowerCase();
+        if (!normalized) {
+          return defaultDeck;
+        }
+
+        const existing = decksByName.get(normalized);
+        if (existing) {
+          return existing;
+        }
+
+        const deck: Deck = {
+          id: createId("deck"),
+          profileId: profile.id,
+          learningSetupId: activeSetup.id,
+          name: name.trim(),
+          createdAt: timestamp,
+          updatedAt: timestamp
+        };
+        decksByName.set(normalized, deck);
+        newDecks.push(deck);
+        return deck;
+      };
+
+      const existingWords = await db.words.where("learningSetupId").equals(activeSetup.id).toArray();
+      const existingTargets = new Set(existingWords.map((word) => word.targetText.trim().toLocaleLowerCase()));
+      const importedWords: WordEntry[] = [];
+
+      for (const row of importedRows) {
+        const normalizedTarget = row.targetText.trim().toLocaleLowerCase();
+        if (existingTargets.has(normalizedTarget)) {
+          continue;
+        }
+
+        existingTargets.add(normalizedTarget);
+        const deck = deckForName(row.deckName);
+        importedWords.push({
+          id: createId("word"),
+          profileId: profile.id,
+          learningSetupId: activeSetup.id,
+          deckId: deck.id,
+          targetText: row.targetText,
+          translations: row.translations,
+          notes: row.notes,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        });
+      }
+
+      const importedCards = importedWords.flatMap((word) => cardDirections.map((direction) => createInitialCardState(word, direction, timestamp)));
+      await db.transaction("rw", [db.decks, db.words, db.cards], async () => {
+        if (newDecks.length > 0) {
+          await db.decks.bulkAdd(newDecks);
+        }
+        if (importedWords.length > 0) {
+          await db.words.bulkAdd(importedWords);
+          await db.cards.bulkAdd(importedCards);
+        }
+      });
+
+      onStatus(t("status.imported", { count: importedWords.length }));
+      await onRefresh();
+    } catch {
+      onStatus(t("status.importFailed"));
+    }
   }
 
   return (
@@ -1721,19 +1991,44 @@ function SettingsView({
 
       <div className="app-panel grid gap-3 p-4">
         <h2 className="text-base font-semibold">{t("settings.data")}</h2>
+        <p className="text-sm text-slate-600">{t("settings.importHelp")}</p>
+        <input
+          ref={backupMergeInputRef}
+          className="hidden"
+          type="file"
+          accept="application/json,.json"
+          onChange={(event) => void importBackup(event, "merge")}
+        />
+        <input
+          ref={backupReplaceInputRef}
+          className="hidden"
+          type="file"
+          accept="application/json,.json"
+          onChange={(event) => void importBackup(event, "replace")}
+        />
+        <input
+          ref={csvImportInputRef}
+          className="hidden"
+          type="file"
+          accept=".csv,text/csv"
+          onChange={(event) => void importCsvWords(event)}
+        />
         <div className="flex flex-wrap gap-2">
-          <button
-            className="app-button app-button-secondary"
-            onClick={() =>
-              downloadTextFile(
-                "lexora-export.json",
-                createJsonExport(profile, learningSetups, decks, words, subsets),
-                "application/json"
-              )
-            }
-          >
+          <button className="app-button app-button-secondary" onClick={() => void exportBackup()}>
             <Download size={18} />
-            {t("library.exportJson")}
+            {t("settings.exportBackup")}
+          </button>
+          <button className="app-button app-button-secondary" onClick={() => backupMergeInputRef.current?.click()}>
+            <Plus size={18} />
+            {t("settings.importBackupMerge")}
+          </button>
+          <button className="app-button app-button-secondary" onClick={() => backupReplaceInputRef.current?.click()}>
+            <RotateCcw size={18} />
+            {t("settings.importBackupReplace")}
+          </button>
+          <button className="app-button app-button-secondary" onClick={() => csvImportInputRef.current?.click()} disabled={!activeSetup}>
+            <Plus size={18} />
+            {t("settings.importCsv")}
           </button>
           <button
             className="app-button app-button-secondary"
@@ -1746,6 +2041,17 @@ function SettingsView({
             <Trash2 size={18} />
             {t("settings.resetAll")}
           </button>
+        </div>
+        <div className="grid gap-2 text-xs leading-relaxed text-slate-600 md:grid-cols-3">
+          <p className="app-subpanel p-2">
+            <span className="font-semibold text-slate-800">{t("settings.importBackupMerge")}:</span> {t("settings.importBackupMergeHint")}
+          </p>
+          <p className="app-subpanel p-2">
+            <span className="font-semibold text-slate-800">{t("settings.importBackupReplace")}:</span> {t("settings.importBackupReplaceHint")}
+          </p>
+          <p className="app-subpanel p-2">
+            <span className="font-semibold text-slate-800">{t("settings.importCsv")}:</span> {t("settings.importCsvHint")}
+          </p>
         </div>
       </div>
 
@@ -2168,11 +2474,12 @@ function ViewTitle({ title }: { title: string }) {
   return <h2 className="text-xl font-semibold tracking-normal">{title}</h2>;
 }
 
-function Metric({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
+function Metric({ label, value, compact = false, hint }: { label: string; value: string; compact?: boolean; hint?: string }) {
   return (
-    <div className={`app-panel ${compact ? "p-3" : "p-4"}`}>
+    <div className={`app-panel ${compact ? "p-3" : "p-4"}`} title={hint}>
       <p className="text-sm font-semibold text-slate-600">{label}</p>
       <p className="text-xl font-semibold">{value}</p>
+      {hint ? <p className="mt-1 text-xs leading-relaxed text-slate-500">{hint}</p> : null}
     </div>
   );
 }
@@ -2301,6 +2608,18 @@ function filterWordsByScope(words: WordEntry[], scope: ScopeSelection, subsets: 
   const subset = subsets.find((candidate) => candidate.id === scope.subsetId);
   const ids = new Set(subset?.wordIds ?? []);
   return words.filter((word) => ids.has(word.id));
+}
+
+function defaultRatingForMatch(match: MatchResult, closeAccepted: boolean): ReviewRating {
+  if (match === "correct") {
+    return "good";
+  }
+
+  if (match === "close" && closeAccepted) {
+    return "hard";
+  }
+
+  return "again";
 }
 
 function defaultSetupName(baseLanguage: LanguageCode, targetLanguage: LanguageCode, locale = "en"): string {
