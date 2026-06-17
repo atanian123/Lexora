@@ -162,6 +162,9 @@ const en = {
   settings: {
     title: "Settings",
     languages: "Languages",
+    theme: "Theme",
+    themeLight: "Light",
+    themeDark: "Dark",
     data: "Data",
     exportBackup: "Export backup",
     importBackupMerge: "Import backup",
@@ -345,6 +348,9 @@ const de = {
   settings: {
     title: "Einstellungen",
     languages: "Sprachen",
+    theme: "Design",
+    themeLight: "Hell",
+    themeDark: "Dunkel",
     data: "Daten",
     exportBackup: "Backup exportieren",
     importBackupMerge: "Backup importieren",
@@ -528,6 +534,9 @@ const fr = {
   settings: {
     title: "Réglages",
     languages: "Langues",
+    theme: "Thème",
+    themeLight: "Clair",
+    themeDark: "Sombre",
     data: "Données",
     exportBackup: "Exporter la sauvegarde",
     importBackupMerge: "Importer une sauvegarde",
@@ -711,6 +720,9 @@ const it = {
   settings: {
     title: "Impostazioni",
     languages: "Lingue",
+    theme: "Tema",
+    themeLight: "Chiaro",
+    themeDark: "Scuro",
     data: "Dati",
     exportBackup: "Esporta backup",
     importBackupMerge: "Importa backup",
@@ -894,6 +906,9 @@ const es = {
   settings: {
     title: "Ajustes",
     languages: "Idiomas",
+    theme: "Tema",
+    themeLight: "Claro",
+    themeDark: "Oscuro",
     data: "Datos",
     exportBackup: "Exportar copia",
     importBackupMerge: "Importar copia",
@@ -1077,6 +1092,9 @@ const pt = {
   settings: {
     title: "Definições",
     languages: "Idiomas",
+    theme: "Tema",
+    themeLight: "Claro",
+    themeDark: "Escuro",
     data: "Dados",
     exportBackup: "Exportar cópia",
     importBackupMerge: "Importar cópia",
@@ -1260,6 +1278,9 @@ const ru = {
   settings: {
     title: "Настройки",
     languages: "Языки",
+    theme: "Тема",
+    themeLight: "Светлая",
+    themeDark: "Темная",
     data: "Данные",
     exportBackup: "Экспорт резервной копии",
     importBackupMerge: "Импорт резервной копии",

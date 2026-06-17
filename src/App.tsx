@@ -10,6 +10,8 @@ import {
   RotateCcw,
   Search,
   Settings,
+  Moon,
+  Sun,
   Trash2,
   UserRound,
   Volume2,
@@ -65,6 +67,7 @@ import { scheduleReview } from "./lib/srs";
 import { fetchTranslationSuggestions, getTodayTranslationUsage } from "./lib/translation";
 
 type ViewKey = "study" | "library" | "decks" | "settings";
+type ThemeMode = "light" | "dark";
 
 interface WordFormState {
   id?: string;
@@ -101,6 +104,13 @@ const emptyWordForm: WordFormState = {
   deckId: ""
 };
 
+const themeStorageKey = "lexora.theme";
+
+function readStoredTheme(): ThemeMode {
+  const stored = localStorage.getItem(themeStorageKey);
+  return stored === "light" || stored === "dark" ? stored : "dark";
+}
+
 export default function App() {
   const { t, i18n } = useTranslation();
   const [view, setView] = useState<ViewKey>("study");
@@ -118,6 +128,7 @@ export default function App() {
   const [status, setStatus] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [theme, setThemeState] = useState<ThemeMode>(readStoredTheme);
 
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? null;
   const activeSetup =
@@ -126,6 +137,16 @@ export default function App() {
   useEffect(() => {
     void refreshAll();
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute(
+      "content",
+      theme === "dark" ? "#0f0f1a" : "#f7f9fc"
+    );
+    localStorage.setItem(themeStorageKey, theme);
+  }, [theme]);
 
   useEffect(() => {
     const updateOnlineState = () => setIsOnline(navigator.onLine);
@@ -208,7 +229,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+      <main className="app-screen flex min-h-dvh items-center justify-center px-4">
         <div className="app-chip">Lexora</div>
       </main>
     );
@@ -218,15 +239,19 @@ export default function App() {
     return <FirstRun onCreated={handleProfileCreated} />;
   }
 
+  function setTheme(value: ThemeMode) {
+    setThemeState(value);
+  }
+
   return (
-    <div className="min-h-screen overflow-x-clip bg-slate-50 text-ink">
-      <header className="border-b border-slate-200 bg-white">
+    <div className="app-shell">
+      <header className="app-header app-glass sticky top-0 z-30 border-b">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
-            <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-11 w-11" />
+            <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-11 w-11 drop-shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
             <div>
-              <h1 className="text-xl font-semibold tracking-normal">Lexora</h1>
-              <p className="text-sm text-slate-600">{t("app.tagline")}</p>
+              <h1 className="app-heading text-xl font-bold tracking-tight">Lexora</h1>
+              <p className="app-muted text-sm">{t("app.tagline")}</p>
             </div>
           </div>
 
@@ -269,16 +294,16 @@ export default function App() {
         </div>
       </header>
 
-      <nav className="border-b border-slate-200 bg-white" aria-label="Primary">
+      <nav className="app-nav app-glass border-b" aria-label="Primary">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="flex min-h-14 items-center justify-between sm:hidden">
             <div className="min-w-0">
-              <span className="block text-sm font-semibold text-slate-700">{currentNavLabel(view, t)}</span>
+              <span className="app-heading block text-sm font-semibold">{currentNavLabel(view, t)}</span>
               {activeSetup ? (
-                <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate-500">
+                <span className="app-subtle mt-1 flex items-center gap-1 text-xs font-semibold">
                   <FlagIcon code={activeSetup.targetLanguage} />
                   <span className="truncate">{languageOptionLabel(activeSetup.targetLanguage, activeProfile.uiLanguage)}</span>
-                  <span className="text-slate-400">·</span>
+                  <span className="app-muted">·</span>
                   <span className="truncate">{t("setup.baseShort")}:</span>
                   <FlagIcon code={activeSetup.baseLanguage} />
                   <span className="truncate">{languageOptionLabel(activeSetup.baseLanguage, activeProfile.uiLanguage)}</span>
@@ -295,8 +320,8 @@ export default function App() {
               {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
             </button>
           </div>
-          <div className={`${mobileMenuOpen ? "grid" : "hidden"} min-w-0 max-w-full gap-3 overflow-x-clip pb-3 sm:flex sm:gap-1 sm:overflow-visible sm:pb-0`}>
-            <div className="app-subpanel grid w-full min-w-0 max-w-full gap-3 p-3 sm:hidden">
+          <div className={`${mobileMenuOpen ? "grid" : "hidden"} min-w-0 max-w-full gap-3 overflow-x-hidden pb-3 sm:flex sm:gap-1 sm:overflow-visible sm:pb-0`}>
+            <div className="app-mobile-menu app-glass grid w-full min-w-0 max-w-full gap-3 p-3 sm:hidden">
               <HeaderSelect label={t("profile.label")}>
                 <select
                   className="app-input"
@@ -371,7 +396,7 @@ export default function App() {
       </nav>
 
       {status ? (
-        <div className="border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-center text-sm font-semibold text-indigo-900">
+        <div className="app-status app-glass border-b px-4 py-2 text-center text-sm font-semibold">
           {status}
         </div>
       ) : null}
@@ -423,6 +448,8 @@ export default function App() {
             decks={decks}
             words={words}
             usage={usage}
+            theme={theme}
+            onThemeChange={setTheme}
             onRefresh={refreshAll}
             onStatus={setStatus}
           />
@@ -452,13 +479,13 @@ function FirstRun({ onCreated }: { onCreated: (profile: Profile) => void }) {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
+    <main className="app-screen flex min-h-dvh items-center justify-center px-4 py-10">
       <form className="app-panel w-full max-w-xl p-4" onSubmit={handleSubmit}>
         <div className="mb-6 flex items-center gap-3">
           <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-12 w-12" />
           <div>
             <h1 className="text-xl font-semibold">{t("profile.firstRunTitle")}</h1>
-            <p className="text-sm text-slate-600">{t("profile.firstRunBody")}</p>
+            <p className="app-muted text-sm">{t("profile.firstRunBody")}</p>
           </div>
         </div>
 
@@ -506,7 +533,7 @@ function SetupRequired({ profile, onCreated }: { profile: Profile; onCreated: ()
       <form className="app-panel w-full max-w-xl p-4" onSubmit={handleSubmit}>
         <div className="mb-6">
           <h1 className="text-xl font-semibold">{t("setup.firstRunTitle")}</h1>
-          <p className="text-sm text-slate-600">{t("setup.firstRunBody")}</p>
+          <p className="app-muted text-sm">{t("setup.firstRunBody")}</p>
         </div>
         <div className="grid gap-4">
           <Label text={t("setup.name")}>
@@ -738,7 +765,7 @@ function StudyView({
       <section className="grid gap-4">
         <ViewTitle title={t("study.paused")} />
         <div className="app-panel p-4">
-          <p className="text-sm text-slate-600">
+          <p className="app-muted text-sm">
             {session.reviewed} {t("study.reviewed")} · {session.queue.length + (session.current ? 1 : 0)} {t("study.remaining")}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
@@ -764,7 +791,7 @@ function StudyView({
       return (
         <section className="grid gap-4">
           <ViewTitle title={t("study.noDueTitle")} />
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950">
+          <div className="app-warning rounded-xl border p-4">
             <p className="font-semibold">{t("study.noCards")}</p>
             <p className="mt-1 text-sm">{t("study.noDueBody")}</p>
             <div className="mt-4 flex flex-wrap gap-2">
@@ -784,7 +811,7 @@ function StudyView({
     return (
       <section className="grid gap-4">
         <ViewTitle title={t("study.summary")} />
-        <p className="text-sm text-slate-600">{t("study.summaryBody")}</p>
+        <p className="app-muted text-sm">{t("study.summaryBody")}</p>
         <div className="grid gap-3 sm:grid-cols-3">
           <Metric label={t("study.reviewed")} value={session.reviewed.toString()} hint={t("study.reviewedHint")} />
           <Metric label={t("study.accuracy")} value={`${accuracy}%`} hint={t("study.accuracyHint")} />
@@ -808,12 +835,12 @@ function StudyView({
           : "wrong";
     const resultPanelClass =
       resultTone === "correct"
-        ? "border-emerald-200 bg-emerald-50 text-emerald-950 shadow-[0_0_0_1px_rgba(16,185,129,0.08),0_12px_30px_rgba(16,185,129,0.12)]"
+        ? "app-success shadow-[0_0_0_1px_rgba(16,185,129,0.15),0_12px_30px_rgba(16,185,129,0.15)]"
         : resultTone === "wrong"
-          ? "border-rose-200 bg-rose-50 text-rose-950 shadow-[0_0_0_1px_rgba(244,63,94,0.08),0_12px_30px_rgba(244,63,94,0.12)]"
-          : "border-amber-200 bg-amber-50 text-amber-950 shadow-[0_0_0_1px_rgba(245,158,11,0.08),0_12px_30px_rgba(245,158,11,0.12)]";
+          ? "app-danger-surface shadow-[0_0_0_1px_rgba(244,63,94,0.15),0_12px_30px_rgba(244,63,94,0.15)]"
+          : "app-warning shadow-[0_0_0_1px_rgba(245,158,11,0.12),0_12px_30px_rgba(245,158,11,0.12)]";
     const resultLabelClass =
-      resultTone === "correct" ? "text-emerald-700" : resultTone === "wrong" ? "text-rose-700" : "text-amber-700";
+      resultTone === "correct" ? "text-emerald-500" : resultTone === "wrong" ? "text-rose-500" : "text-amber-500";
     return (
       <section className="grid gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -833,7 +860,7 @@ function StudyView({
             <span className="app-chip">{session.reviewed} {t("study.reviewed")}</span>
           </div>
           <div className="mb-4 flex items-start justify-between gap-3">
-            <p className="text-2xl font-semibold">{prompt}</p>
+            <p className="app-heading text-2xl font-bold">{prompt}</p>
             <button
               className="app-button app-button-secondary h-11 w-11 shrink-0 p-0"
               type="button"
@@ -875,7 +902,7 @@ function StudyView({
                   {session.match === "close" ? t("study.closeAnswer") : null}
                   {session.match === "wrong" ? t("study.wrongAnswer") : null}
                 </p>
-                <p className="mt-2 text-sm font-semibold opacity-75">{t("study.reveal")}</p>
+                <p className="mt-2 text-sm font-semibold opacity-60">{t("study.reveal")}</p>
                 <p className="mt-1 text-lg font-semibold">{accepted.join(" / ")}</p>
                 {session.match === "close" ? (
                   <label className="mt-3 flex items-center gap-2 text-sm font-semibold">
@@ -894,7 +921,7 @@ function StudyView({
                   </label>
                 ) : null}
               </div>
-              <p className="text-sm text-slate-600">{t("study.ratingHelp")}</p>
+              <p className="app-muted text-sm">{t("study.ratingHelp")}</p>
               <div className="grid grid-cols-4 gap-1.5 sm:w-fit">
                 {ratings.map((rating) => (
                   <button
@@ -915,7 +942,7 @@ function StudyView({
                 ))}
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-slate-500">
+                <p className="app-subtle text-xs">
                   {t("study.selectedRating", {
                     rating: t(`study.${session.selectedRating ?? "again"}`),
                     hint: t(`study.${session.selectedRating ?? "again"}Hint`)
@@ -936,7 +963,7 @@ function StudyView({
     <section className="grid gap-4">
       <ViewTitle title={t("study.title")} />
       <div className="app-panel grid gap-3 p-4">
-        <p className="text-sm text-slate-600">{t("study.setupHelp")}</p>
+        <p className="app-muted text-sm">{t("study.setupHelp")}</p>
         <div className="grid gap-4 md:grid-cols-3">
           <ScopeSelect scope={scope} setScope={setScope} decks={decks} subsets={subsets} />
           <DirectionPicker value={direction} setup={setup} onChange={setDirection} />
@@ -1150,8 +1177,8 @@ function LibraryView({
       <form className="app-panel grid gap-3 p-4" onSubmit={saveWord}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
-            <h2 className="text-base font-semibold">{form.id ? t("common.edit") : t("library.addWord")}</h2>
-            {form.id ? <p className="truncate text-xs text-slate-500">{form.targetText}</p> : null}
+            <h2 className="app-heading text-base font-semibold">{form.id ? t("common.edit") : t("library.addWord")}</h2>
+            {form.id ? <p className="app-subtle truncate text-xs">{form.targetText}</p> : null}
           </div>
           <div className="flex flex-wrap gap-1.5">
             {form.id ? (
@@ -1194,7 +1221,7 @@ function LibraryView({
             {suggestions.map((suggestion) => (
               <button
                 key={`${suggestion.text}-${suggestion.confidence}`}
-                className="inline-flex min-h-8 items-center gap-1 rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-sm font-medium text-indigo-900 transition-colors hover:border-indigo-200 hover:bg-indigo-100"
+                className="app-suggestion inline-flex min-h-8 items-center gap-1 rounded-full border px-2.5 py-1 text-sm font-medium transition-colors"
                 type="button"
                 onClick={() => {
                   const next = new Set(splitTranslations(form.translations));
@@ -1203,7 +1230,7 @@ function LibraryView({
                 }}
               >
                 {suggestion.text}
-                <span className="rounded-full bg-white/80 px-1.5 text-[0.68rem] text-indigo-600">{Math.round(suggestion.confidence * 100)}%</span>
+                <span className="rounded-full bg-black/10 px-1.5 text-[0.68rem]">{Math.round(suggestion.confidence * 100)}%</span>
               </button>
             ))}
           </div>
@@ -1211,10 +1238,10 @@ function LibraryView({
         <div
           className={`flex items-center justify-between gap-3 rounded-md border px-2.5 py-1.5 text-xs ${
             translationLimitReached
-              ? "border-rose-200 bg-rose-50 text-rose-900"
+              ? "app-danger-surface"
               : translationQuotaPercent >= 80
-                ? "border-amber-200 bg-amber-50 text-amber-900"
-                : "border-slate-200 bg-slate-50 text-slate-600"
+                ? "app-warning"
+                : "border-[color:var(--border-subtle)] bg-[var(--subpanel-bg)] app-muted"
           }`}
           title={t("settings.usage")}
         >
@@ -1282,7 +1309,7 @@ function LibraryView({
           </button>
         </div>
         {showFilters ? (
-          <div className="grid gap-3 border-t border-slate-200 pt-3 md:grid-cols-2">
+          <div className="app-divider grid gap-3 border-t pt-3 md:grid-cols-2">
           <Label text={t("common.deck")}>
             <select className="app-input" value={deckFilter} onChange={(event) => setDeckFilter(event.target.value)}>
               <option value="all">{t("common.all")}</option>
@@ -1307,21 +1334,21 @@ function LibraryView({
 
       <div className="app-panel overflow-hidden">
         {filteredWords.length === 0 ? (
-          <div className="p-4 text-slate-600">{t("library.noWords")}</div>
+          <div className="app-muted p-4">{t("library.noWords")}</div>
         ) : null}
         {filteredWords.map((word) => (
-          <article key={word.id} className="border-t border-slate-100 px-3 py-2.5 first:border-t-0">
+          <article key={word.id} className="app-divider border-t px-3 py-2.5 first:border-t-0">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <h3 className="font-semibold leading-snug text-slate-950">{word.targetText}</h3>
-                  <p className="text-sm leading-snug text-slate-700">{word.translations.join(" / ")}</p>
+                  <h3 className="app-heading font-semibold leading-snug">{word.targetText}</h3>
+                  <p className="app-muted text-sm leading-snug">{word.translations.join(" / ")}</p>
                 </div>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   <span className="app-chip">{decks.find((deck) => deck.id === word.deckId)?.name ?? t("common.deck")}</span>
                   <span className="app-chip">{formatLastReviewed(cardByWord.get(word.id), t("library.lastReviewed"), profile.uiLanguage)}</span>
                 </div>
-                {word.notes ? <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{word.notes}</p> : null}
+                {word.notes ? <p className="app-subtle mt-1.5 text-xs leading-relaxed">{word.notes}</p> : null}
               </div>
               <div className="flex shrink-0 gap-1">
                 <button className="app-button app-button-secondary h-9 w-9 p-0" onClick={() => editWord(word)} aria-label={t("common.edit")}>
@@ -1479,7 +1506,7 @@ function DecksView({
           </Label>
           <div className="app-subpanel max-h-52 overflow-auto p-2">
             {words.map((word) => (
-              <label key={word.id} className="flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-slate-50">
+              <label key={word.id} className="app-label flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-[var(--dropdown-hover-bg)]">
                 <input
                   type="checkbox"
                   checked={selectedWordIds.includes(word.id)}
@@ -1514,7 +1541,7 @@ function DecksView({
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="font-semibold">{deck.name}</h3>
-                  <p className="text-sm text-slate-600">{words.filter((word) => word.deckId === deck.id).length} {t("common.word")}</p>
+                  <p className="app-muted text-sm">{words.filter((word) => word.deckId === deck.id).length} {t("common.word")}</p>
                 </div>
                 <div className="flex gap-2">
                   <button className="app-button app-button-secondary" onClick={() => renameDeck(deck)} aria-label={t("common.rename")}>
@@ -1530,14 +1557,14 @@ function DecksView({
         </div>
         <div className="grid gap-3">
           {subsets.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-slate-600">{t("decks.noSubsets")}</div>
+            <div className="app-muted rounded-xl border border-dashed border-[color:var(--border-default)] bg-[var(--subpanel-bg)] p-4">{t("decks.noSubsets")}</div>
           ) : null}
           {subsets.map((subset) => (
             <article key={subset.id} className="app-panel p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="font-semibold">{subset.name}</h3>
-                  <p className="text-sm text-slate-600">{subset.wordIds.length} {t("decks.selectedWords")}</p>
+                  <p className="app-muted text-sm">{subset.wordIds.length} {t("decks.selectedWords")}</p>
                 </div>
                 <div className="flex gap-2">
                   <button className="app-button app-button-secondary" onClick={() => editSubset(subset)} aria-label={t("common.edit")}>
@@ -1564,6 +1591,8 @@ function SettingsView({
   decks,
   words,
   usage,
+  theme,
+  onThemeChange,
   onRefresh,
   onStatus
 }: {
@@ -1574,6 +1603,8 @@ function SettingsView({
   decks: Deck[];
   words: WordEntry[];
   usage: TranslationUsage | null;
+  theme: ThemeMode;
+  onThemeChange: (theme: ThemeMode) => void;
   onRefresh: () => Promise<void>;
   onStatus: (message: string) => void;
 }) {
@@ -1847,20 +1878,42 @@ function SettingsView({
   }
 
   return (
-    <section className="grid gap-4">
+    <section className="grid min-w-0 gap-4">
       <ViewTitle title={t("settings.title")} />
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="app-panel grid gap-3 p-4">
-          <h2 className="text-base font-semibold">{t("settings.languages")}</h2>
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <div className="app-panel grid min-w-0 gap-3 p-4">
+          <h2 className="app-heading text-base font-semibold">{t("settings.languages")}</h2>
           <LanguageSelect label={t("profile.uiLanguage")} value={profile.uiLanguage} onChange={updateUiLanguage} />
+          <Label text={t("settings.theme")}>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className={`app-button min-w-0 ${theme === "light" ? "app-button-primary" : "app-button-secondary"}`}
+                type="button"
+                onClick={() => onThemeChange("light")}
+                aria-pressed={theme === "light"}
+              >
+                <Sun size={16} />
+                {t("settings.themeLight")}
+              </button>
+              <button
+                className={`app-button min-w-0 ${theme === "dark" ? "app-button-primary" : "app-button-secondary"}`}
+                type="button"
+                onClick={() => onThemeChange("dark")}
+                aria-pressed={theme === "dark"}
+              >
+                <Moon size={16} />
+                {t("settings.themeDark")}
+              </button>
+            </div>
+          </Label>
         </div>
 
-        <form className="app-panel grid gap-3 p-4" onSubmit={createAdditionalProfile}>
-          <h2 className="text-base font-semibold">{t("profile.createAnother")}</h2>
+        <form className="app-panel grid min-w-0 gap-3 p-4" onSubmit={createAdditionalProfile}>
+          <h2 className="app-heading text-base font-semibold">{t("profile.createAnother")}</h2>
           <Label text={t("profile.name")}>
             <input className="app-input" value={newProfileName} onChange={(event) => setNewProfileName(event.target.value)} placeholder={t("profile.namePlaceholder")} />
           </Label>
-          <p className="text-sm text-slate-600">{profiles.length} {t("profile.switch")}</p>
+          <p className="app-muted text-sm">{profiles.length} {t("profile.switch")}</p>
           <button className="app-button app-button-primary w-fit" type="submit">
             <Plus size={18} />
             {t("common.create")}
@@ -1868,9 +1921,9 @@ function SettingsView({
         </form>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <form className="app-panel grid gap-3 p-4" onSubmit={createSetup}>
-          <h2 className="text-base font-semibold">{t("setup.create")}</h2>
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <form className="app-panel grid min-w-0 gap-3 p-4" onSubmit={createSetup}>
+          <h2 className="app-heading text-base font-semibold">{t("setup.create")}</h2>
           <Label text={t("setup.name")}>
             <input
               className="app-input"
@@ -1909,23 +1962,23 @@ function SettingsView({
           </button>
         </form>
 
-        <div className="app-panel grid gap-3 p-4">
-          <h2 className="text-base font-semibold">{t("setup.title")}</h2>
+        <div className="app-panel grid min-w-0 gap-3 p-4">
+          <h2 className="app-heading text-base font-semibold">{t("setup.title")}</h2>
           {learningSetups.map((setup) => (
-            <div key={setup.id} className="app-subpanel grid gap-3 p-3">
-              <div className="flex items-center justify-between gap-3">
+            <div key={setup.id} className="app-subpanel grid min-w-0 gap-3 p-3">
+              <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 font-semibold">
                     <FlagIcon code={setup.targetLanguage} />
                     <span className="truncate">{learningSetupDisplayName(setup, i18n.language)}</span>
                   </p>
-                  <p className="mt-1 flex items-center gap-1 text-sm text-slate-600">
+                  <p className="app-muted mt-1 flex min-w-0 items-center gap-1 text-sm">
                     <span>{t("setup.baseShort")}:</span>
                     <FlagIcon code={setup.baseLanguage} />
-                    <span>{languageOptionLabel(setup.baseLanguage, i18n.language)}</span>
+                    <span className="truncate">{languageOptionLabel(setup.baseLanguage, i18n.language)}</span>
                   </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="setup-actions">
                   <button className="app-button app-button-secondary" onClick={() => renameSetup(setup)} aria-label={t("common.rename")}>
                     <Edit2 size={17} />
                   </button>
@@ -1949,7 +2002,7 @@ function SettingsView({
                 </div>
               </div>
               {editingSetupLanguagesId === setup.id ? (
-                <div className="app-subpanel grid gap-3 p-3">
+        <div className="app-subpanel grid min-w-0 gap-3 p-3">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <LanguageSelect
                       label={t("setup.baseLanguage")}
@@ -1989,9 +2042,9 @@ function SettingsView({
         </div>
       </div>
 
-      <div className="app-panel grid gap-3 p-4">
-        <h2 className="text-base font-semibold">{t("settings.data")}</h2>
-        <p className="text-sm text-slate-600">{t("settings.importHelp")}</p>
+      <div className="app-panel grid min-w-0 gap-3 p-4">
+        <h2 className="app-heading text-base font-semibold">{t("settings.data")}</h2>
+        <p className="app-muted text-sm">{t("settings.importHelp")}</p>
         <input
           ref={backupMergeInputRef}
           className="hidden"
@@ -2013,7 +2066,7 @@ function SettingsView({
           accept=".csv,text/csv"
           onChange={(event) => void importCsvWords(event)}
         />
-        <div className="flex flex-wrap gap-2">
+        <div className="settings-actions">
           <button className="app-button app-button-secondary" onClick={() => void exportBackup()}>
             <Download size={18} />
             {t("settings.exportBackup")}
@@ -2042,22 +2095,22 @@ function SettingsView({
             {t("settings.resetAll")}
           </button>
         </div>
-        <div className="grid gap-2 text-xs leading-relaxed text-slate-600 md:grid-cols-3">
+        <div className="app-muted grid min-w-0 gap-2 text-xs leading-relaxed md:grid-cols-3">
           <p className="app-subpanel p-2">
-            <span className="font-semibold text-slate-800">{t("settings.importBackupMerge")}:</span> {t("settings.importBackupMergeHint")}
+            <span className="app-label font-semibold">{t("settings.importBackupMerge")}:</span> {t("settings.importBackupMergeHint")}
           </p>
           <p className="app-subpanel p-2">
-            <span className="font-semibold text-slate-800">{t("settings.importBackupReplace")}:</span> {t("settings.importBackupReplaceHint")}
+            <span className="app-label font-semibold">{t("settings.importBackupReplace")}:</span> {t("settings.importBackupReplaceHint")}
           </p>
           <p className="app-subpanel p-2">
-            <span className="font-semibold text-slate-800">{t("settings.importCsv")}:</span> {t("settings.importCsvHint")}
+            <span className="app-label font-semibold">{t("settings.importCsv")}:</span> {t("settings.importCsvHint")}
           </p>
         </div>
       </div>
 
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950">
+      <div className="app-warning rounded-xl border p-4">
         <h2 className="text-base font-semibold">{t("settings.usage")}</h2>
-        <p>
+        <p className="mt-1 text-sm">
           {usage?.count ?? 0} / {myMemoryDailyLimit} {t("common.today")}
         </p>
       </div>
@@ -2072,15 +2125,15 @@ function UsageBadge({ usage }: { usage: TranslationUsage | null }) {
   const percent = Math.min(100, Math.round((count / myMemoryDailyLimit) * 100));
 
   return (
-    <div className="w-full min-w-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 sm:min-w-52" title={t("settings.usage")}>
+    <div className="app-warning w-full min-w-0 rounded-xl border px-3 py-2 text-sm" title={t("settings.usage")}>
       <div className="flex items-center justify-between gap-2 font-semibold">
         <span>{t("settings.usage")}</span>
         <span>{percent}%</span>
       </div>
-      <div className="mt-1 h-2 overflow-hidden rounded-full bg-amber-100">
-        <div className="h-full bg-amber-500" style={{ width: `${percent}%` }} />
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-black/10">
+        <div className="h-full bg-amber-400 transition-all duration-500" style={{ width: `${percent}%` }} />
       </div>
-      <p className="mt-1 text-xs">{remaining} {t("settings.requestsRemaining")}</p>
+      <p className="mt-1 text-xs opacity-75">{remaining} {t("settings.requestsRemaining")}</p>
     </div>
   );
 }
@@ -2090,15 +2143,15 @@ function ConnectionBadge({ online }: { online: boolean }) {
 
   return (
     <div
-      className={`w-full min-w-0 rounded-lg border px-3 py-2 text-sm font-semibold sm:min-w-52 ${
-        online ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-rose-200 bg-rose-50 text-rose-950"
+      className={`w-full min-w-0 rounded-xl border px-3 py-2 text-sm font-semibold ${
+        online ? "app-success" : "app-danger-surface"
       }`}
       role="status"
       aria-live="polite"
       title={online ? t("connection.onlineDetail") : t("connection.offlineDetail")}
     >
       <span className="flex items-center gap-2">
-        <span className={`h-2.5 w-2.5 rounded-full ${online ? "bg-emerald-500" : "bg-rose-500"}`} aria-hidden="true" />
+        <span className={`h-2 w-2 rounded-full ${online ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" : "bg-rose-400"}`} aria-hidden="true" />
         {online ? t("connection.online") : t("connection.offline")}
       </span>
     </div>
@@ -2199,7 +2252,7 @@ function DirectionPicker({
 
   return (
     <div className="grid gap-1">
-      <span className="text-sm font-semibold text-slate-700">{t("study.direction")}</span>
+      <span className="app-label text-sm font-semibold">{t("study.direction")}</span>
       <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t("study.direction")}>
         {options.map((option) => (
           <button
@@ -2283,7 +2336,7 @@ function LanguageSelect({
 
   return (
     <div className="relative min-w-0 max-w-full" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
-      <span className="mb-1 block text-sm font-semibold text-slate-700">{label}</span>
+      <span className="app-label mb-1 block text-sm font-semibold">{label}</span>
       <button
         className="app-input flex min-h-10 min-w-0 items-center justify-between gap-3 text-left"
         type="button"
@@ -2307,8 +2360,8 @@ function LanguageSelect({
           {availableCodes.map((code) => (
             <button
               key={code}
-              className={`flex w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 ${
-                code === value ? "bg-indigo-50 font-semibold text-indigo-900" : "text-slate-800"
+              className={`dropdown-option flex w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${
+                code === value ? "dropdown-option-active" : ""
               }`}
               type="button"
               role="option"
@@ -2330,7 +2383,7 @@ function LanguageSelect({
 
 function Label({ text, children }: { text: React.ReactNode; children: React.ReactNode }) {
   return (
-    <label className="grid gap-1 text-sm font-semibold text-slate-700">
+    <label className="app-label grid min-w-0 gap-1 text-sm font-semibold">
       <span>{text}</span>
       {children}
     </label>
@@ -2339,7 +2392,7 @@ function Label({ text, children }: { text: React.ReactNode; children: React.Reac
 
 function HeaderSelect({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="grid min-w-0 gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+    <label className="app-subtle grid min-w-0 gap-1 text-xs font-semibold uppercase tracking-wide">
       <span className="truncate">{label}</span>
       {children}
     </label>
@@ -2409,7 +2462,7 @@ function LearningSetupSelect({
 
   return (
     <div className="relative min-w-0 max-w-full" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="app-subtle mb-1 block text-xs font-semibold uppercase tracking-wide">{label}</span>
       <button
         className="app-input flex min-h-10 min-w-0 items-center justify-between gap-3 text-left"
         type="button"
@@ -2424,7 +2477,7 @@ function LearningSetupSelect({
           <span className="min-w-0">
             <span className="block truncate">{selected ? learningSetupDisplayName(selected, locale) : ""}</span>
             {selected ? (
-              <span className="flex items-center gap-1 truncate text-xs font-semibold text-slate-500">
+              <span className="app-subtle flex items-center gap-1 truncate text-xs font-semibold">
                 <span>{t("setup.baseShort")}:</span>
                 <FlagIcon code={selected.baseLanguage} />
                 <span>{languageOptionLabel(selected.baseLanguage, locale)}</span>
@@ -2442,8 +2495,8 @@ function LearningSetupSelect({
           {setups.map((setup) => (
             <button
               key={setup.id}
-              className={`flex w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 ${
-                setup.id === value ? "bg-indigo-50 font-semibold text-indigo-900" : "text-slate-800"
+              className={`dropdown-option flex w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${
+                setup.id === value ? "dropdown-option-active" : ""
               }`}
               type="button"
               role="option"
@@ -2456,7 +2509,7 @@ function LearningSetupSelect({
               <FlagIcon code={setup.targetLanguage} />
               <span className="min-w-0">
                 <span className="block truncate">{learningSetupDisplayName(setup, locale)}</span>
-                <span className="flex min-w-0 items-center gap-1 text-xs font-normal text-slate-500">
+                <span className="app-subtle flex min-w-0 items-center gap-1 text-xs font-normal">
                   <span>{t("setup.baseShort")}:</span>
                   <FlagIcon code={setup.baseLanguage} />
                   <span className="truncate">{languageOptionLabel(setup.baseLanguage, locale)}</span>
@@ -2471,15 +2524,15 @@ function LearningSetupSelect({
 }
 
 function ViewTitle({ title }: { title: string }) {
-  return <h2 className="text-xl font-semibold tracking-normal">{title}</h2>;
+  return <h2 className="app-heading text-2xl font-bold tracking-tight">{title}</h2>;
 }
 
 function Metric({ label, value, compact = false, hint }: { label: string; value: string; compact?: boolean; hint?: string }) {
   return (
     <div className={`app-panel ${compact ? "p-3" : "p-4"}`} title={hint}>
-      <p className="text-sm font-semibold text-slate-600">{label}</p>
-      <p className="text-xl font-semibold">{value}</p>
-      {hint ? <p className="mt-1 text-xs leading-relaxed text-slate-500">{hint}</p> : null}
+      <p className="app-muted text-sm font-semibold">{label}</p>
+      <p className="app-heading text-2xl font-bold">{value}</p>
+      {hint ? <p className="app-subtle mt-1 text-xs leading-relaxed">{hint}</p> : null}
     </div>
   );
 }
@@ -2499,8 +2552,8 @@ function NavButton({
     <button
       className={`flex min-h-10 w-full items-center gap-2 rounded-lg border px-3 text-sm font-semibold sm:min-h-11 sm:w-auto sm:rounded-none sm:border-x-0 sm:border-t-0 sm:border-b-2 ${
         active
-          ? "border-indigo-700 bg-indigo-50 text-indigo-800 sm:bg-transparent"
-          : "border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-950 sm:border-transparent sm:hover:bg-transparent"
+          ? "nav-button-active"
+          : "nav-button-inactive"
       }`}
       onClick={onClick}
       title={label}
