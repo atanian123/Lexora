@@ -209,7 +209,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-ink">
+    <div className="min-h-screen overflow-x-clip bg-slate-50 text-ink">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
@@ -285,8 +285,8 @@ export default function App() {
               {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
             </button>
           </div>
-          <div className={`${mobileMenuOpen ? "grid" : "hidden"} gap-3 pb-3 sm:flex sm:gap-1 sm:pb-0`}>
-            <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:hidden">
+          <div className={`${mobileMenuOpen ? "grid" : "hidden"} min-w-0 max-w-full gap-3 overflow-x-clip pb-3 sm:flex sm:gap-1 sm:overflow-visible sm:pb-0`}>
+            <div className="grid w-full min-w-0 max-w-full gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:hidden">
               <HeaderSelect label={t("profile.label")}>
                 <select
                   className="app-input"
@@ -1687,7 +1687,7 @@ function UsageBadge({ usage }: { usage: TranslationUsage | null }) {
   const percent = Math.min(100, Math.round((count / myMemoryDailyLimit) * 100));
 
   return (
-    <div className="min-w-52 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950" title={t("settings.usage")}>
+    <div className="w-full min-w-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 sm:min-w-52" title={t("settings.usage")}>
       <div className="flex items-center justify-between gap-2 font-semibold">
         <span>{t("settings.usage")}</span>
         <span>{percent}%</span>
@@ -1705,7 +1705,7 @@ function ConnectionBadge({ online }: { online: boolean }) {
 
   return (
     <div
-      className={`min-w-52 rounded-lg border px-3 py-2 text-sm font-semibold ${
+      className={`w-full min-w-0 rounded-lg border px-3 py-2 text-sm font-semibold sm:min-w-52 ${
         online ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-rose-200 bg-rose-50 text-rose-950"
       }`}
       role="status"
@@ -1897,10 +1897,10 @@ function LanguageSelect({
   }
 
   return (
-    <div className="relative" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
+    <div className="relative min-w-0 max-w-full" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
       <span className="mb-1 block text-sm font-semibold text-slate-700">{label}</span>
       <button
-        className="app-input flex min-h-11 items-center justify-between gap-3 text-left"
+        className="app-input flex min-h-11 min-w-0 items-center justify-between gap-3 text-left"
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -1922,7 +1922,7 @@ function LanguageSelect({
           {availableCodes.map((code) => (
             <button
               key={code}
-              className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 ${
+              className={`flex w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 ${
                 code === value ? "bg-indigo-50 font-bold text-indigo-900" : "text-slate-800"
               }`}
               type="button"
@@ -1934,7 +1934,7 @@ function LanguageSelect({
               }}
             >
               <FlagIcon code={code} />
-              <span>{languageOptionLabel(code, i18n.language)}</span>
+              <span className="truncate">{languageOptionLabel(code, i18n.language)}</span>
             </button>
           ))}
         </div>
@@ -1954,8 +1954,8 @@ function Label({ text, children }: { text: React.ReactNode; children: React.Reac
 
 function HeaderSelect({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
-      <span>{label}</span>
+    <label className="grid min-w-0 gap-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+      <span className="truncate">{label}</span>
       {children}
     </label>
   );
@@ -2023,10 +2023,10 @@ function LearningSetupSelect({
   }
 
   return (
-    <div className="relative" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
+    <div className="relative min-w-0 max-w-full" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
       <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">{label}</span>
       <button
-        className="app-input flex min-h-11 items-center justify-between gap-3 text-left"
+        className="app-input flex min-h-11 min-w-0 items-center justify-between gap-3 text-left"
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -2057,7 +2057,7 @@ function LearningSetupSelect({
           {setups.map((setup) => (
             <button
               key={setup.id}
-              className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 ${
+              className={`flex w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 ${
                 setup.id === value ? "bg-indigo-50 font-bold text-indigo-900" : "text-slate-800"
               }`}
               type="button"
@@ -2071,10 +2071,10 @@ function LearningSetupSelect({
               <FlagIcon code={setup.targetLanguage} />
               <span className="min-w-0">
                 <span className="block truncate">{learningSetupDisplayName(setup, locale)}</span>
-                <span className="flex items-center gap-1 text-xs font-normal text-slate-500">
+                <span className="flex min-w-0 items-center gap-1 text-xs font-normal text-slate-500">
                   <span>{t("setup.baseShort")}:</span>
                   <FlagIcon code={setup.baseLanguage} />
-                  <span>{languageOptionLabel(setup.baseLanguage, locale)}</span>
+                  <span className="truncate">{languageOptionLabel(setup.baseLanguage, locale)}</span>
                 </span>
               </span>
             </button>
