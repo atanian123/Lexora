@@ -149,6 +149,28 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    if (!mobileMenuOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
     const updateOnlineState = () => setIsOnline(navigator.onLine);
 
     window.addEventListener("online", updateOnlineState);
@@ -243,20 +265,86 @@ export default function App() {
     setThemeState(value);
   }
 
+  async function updateActiveUiLanguage(value: LanguageCode) {
+    if (!activeProfile) {
+      return;
+    }
+
+    await db.profiles.update(activeProfile.id, { uiLanguage: value, updatedAt: nowIso() });
+    await refreshAll(activeProfile.id, false);
+  }
+
   return (
     <div className="app-shell">
       <header className="app-header app-glass sticky top-0 z-30 border-b">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-11 w-11 drop-shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
-            <div>
-              <h1 className="app-heading text-xl font-bold tracking-tight">Lexora</h1>
-              <p className="app-muted text-sm">{t("app.tagline")}</p>
+        <div className="mx-auto grid max-w-7xl gap-3 px-4 py-3 sm:px-6">
+          <div className="desktop-top-row">
+            <div className="flex min-w-0 items-center gap-3">
+              <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-11 w-11 shrink-0 drop-shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
+              <div className="min-w-0">
+                <h1 className="app-heading text-xl font-bold tracking-tight">Lexora</h1>
+                <p className="app-muted truncate text-sm">{t("app.tagline")}</p>
+              </div>
+            </div>
+            <div className="desktop-nav-tabs" aria-label="Primary">
+              <NavButton
+                icon={<BookOpen size={18} />}
+                label={t("nav.study")}
+                active={view === "study"}
+                onClick={() => setView("study")}
+              />
+              <NavButton
+                icon={<Search size={18} />}
+                label={t("nav.library")}
+                active={view === "library"}
+                onClick={() => setView("library")}
+              />
+              <NavButton
+                icon={<Layers size={18} />}
+                label={t("nav.decks")}
+                active={view === "decks"}
+                onClick={() => setView("decks")}
+              />
+              <NavButton
+                icon={<Settings size={18} />}
+                label={t("nav.settings")}
+                active={view === "settings"}
+                onClick={() => setView("settings")}
+              />
+            </div>
+            <button
+              className="mobile-menu-trigger app-button app-button-secondary h-10 w-10 shrink-0 p-0"
+              type="button"
+              aria-expanded={mobileMenuOpen}
+              aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
+              onClick={() => setMobileMenuOpen((open) => !open)}
+            >
+              {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
+            <div className="desktop-preferences">
+              <ChromePreferences
+                uiLanguage={activeProfile.uiLanguage}
+                theme={theme}
+                onLanguageChange={updateActiveUiLanguage}
+                onThemeChange={setTheme}
+              />
             </div>
           </div>
 
-          <div className="hidden w-full gap-3 sm:grid lg:w-auto lg:grid-cols-[minmax(18rem,22rem)_13rem] lg:items-end">
-            <div className="grid gap-2">
+          <div className="desktop-header-controls">
+            <div className="desktop-practice-control">
+              <LearningSetupSelect
+                label={t("setup.label")}
+                value={activeSetup?.id ?? ""}
+                setups={learningSetups}
+                locale={activeProfile.uiLanguage}
+                onChange={async (setupId) => {
+                  await db.profiles.update(activeProfile.id, { activeLearningSetupId: setupId, updatedAt: nowIso() });
+                  await refreshAll(activeProfile.id);
+                }}
+              />
+            </div>
+            <div className="desktop-meta-controls">
               <HeaderSelect label={t("profile.label")}>
                 <select
                   className="app-input"
@@ -275,28 +363,18 @@ export default function App() {
                   ))}
                 </select>
               </HeaderSelect>
-              <LearningSetupSelect
-                label={t("setup.label")}
-                value={activeSetup?.id ?? ""}
-                setups={learningSetups}
-                locale={activeProfile.uiLanguage}
-                onChange={async (setupId) => {
-                  await db.profiles.update(activeProfile.id, { activeLearningSetupId: setupId, updatedAt: nowIso() });
-                  await refreshAll(activeProfile.id);
-                }}
-              />
-            </div>
-            <div className="grid gap-2">
-              <UsageBadge usage={usage} />
-              <ConnectionBadge online={isOnline} />
+              <div className="desktop-status-row">
+                <UsageBadge usage={usage} compact />
+                <ConnectionBadge online={isOnline} compact />
+              </div>
             </div>
           </div>
         </div>
       </header>
 
-      <nav className="app-nav app-glass border-b" aria-label="Primary">
+      <nav className="app-nav app-glass border-b sm:hidden" aria-label="Primary">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="flex min-h-14 items-center justify-between sm:hidden">
+          <div className="flex min-h-14 items-center sm:hidden">
             <div className="min-w-0">
               <span className="app-heading block text-sm font-semibold">{currentNavLabel(view, t)}</span>
               {activeSetup ? (
@@ -310,90 +388,122 @@ export default function App() {
                 </span>
               ) : null}
             </div>
-            <button
-              className="app-button app-button-secondary h-10 w-10 p-0"
-              type="button"
-              aria-expanded={mobileMenuOpen}
-              aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
-              onClick={() => setMobileMenuOpen((open) => !open)}
-            >
-              {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
-            </button>
-          </div>
-          <div className={`${mobileMenuOpen ? "grid" : "hidden"} min-w-0 max-w-full gap-3 overflow-x-hidden pb-3 sm:flex sm:gap-1 sm:overflow-visible sm:pb-0`}>
-            <div className="app-mobile-menu app-glass grid w-full min-w-0 max-w-full gap-3 p-3 sm:hidden">
-              <HeaderSelect label={t("profile.label")}>
-                <select
-                  className="app-input"
-                  value={activeProfile.id}
-                  aria-label={t("profile.switch")}
-                  title={t("profile.switch")}
-                  onChange={(event) => {
-                    setActiveProfileId(event.target.value);
-                    void refreshAll(event.target.value);
-                    setMobileMenuOpen(false);
-                  }}
-                >
-                  {profiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name}
-                    </option>
-                  ))}
-                </select>
-              </HeaderSelect>
-              <LearningSetupSelect
-                label={t("setup.label")}
-                value={activeSetup?.id ?? ""}
-                setups={learningSetups}
-                locale={activeProfile.uiLanguage}
-                onChange={async (setupId) => {
-                  await db.profiles.update(activeProfile.id, { activeLearningSetupId: setupId, updatedAt: nowIso() });
-                  await refreshAll(activeProfile.id);
-                  setMobileMenuOpen(false);
-                }}
-              />
-              <UsageBadge usage={usage} />
-              <ConnectionBadge online={isOnline} />
-            </div>
-            <NavButton
-              icon={<BookOpen size={18} />}
-              label={t("nav.study")}
-              active={view === "study"}
-              onClick={() => {
-                setView("study");
-                setMobileMenuOpen(false);
-              }}
-            />
-            <NavButton
-              icon={<Search size={18} />}
-              label={t("nav.library")}
-              active={view === "library"}
-              onClick={() => {
-                setView("library");
-                setMobileMenuOpen(false);
-              }}
-            />
-            <NavButton
-              icon={<Layers size={18} />}
-              label={t("nav.decks")}
-              active={view === "decks"}
-              onClick={() => {
-                setView("decks");
-                setMobileMenuOpen(false);
-              }}
-            />
-            <NavButton
-              icon={<Settings size={18} />}
-              label={t("nav.settings")}
-              active={view === "settings"}
-              onClick={() => {
-                setView("settings");
-                setMobileMenuOpen(false);
-              }}
-            />
           </div>
         </div>
       </nav>
+
+      {mobileMenuOpen ? (
+        <div className="fixed inset-0 z-50 sm:hidden" role="presentation">
+          <button
+            className="app-backdrop absolute inset-0"
+            type="button"
+            aria-label={t("nav.closeMenu")}
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <aside
+            className="app-mobile-drawer app-glass absolute inset-y-0 right-0 flex w-[min(22rem,calc(100vw-1rem))] max-w-full flex-col overflow-y-auto p-4 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("nav.menu")}
+          >
+            <div className="mb-4 flex h-11 items-center justify-between gap-3">
+              <ChromePreferences
+                uiLanguage={activeProfile.uiLanguage}
+                theme={theme}
+                onLanguageChange={updateActiveUiLanguage}
+                onThemeChange={setTheme}
+              />
+              <button
+                className="app-button app-button-secondary h-10 w-10 shrink-0 p-0"
+                type="button"
+                aria-label={t("nav.closeMenu")}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid gap-4">
+              <section className="app-subpanel grid gap-3 p-3">
+                <HeaderSelect label={t("profile.label")}>
+                  <select
+                    className="app-input"
+                    value={activeProfile.id}
+                    aria-label={t("profile.switch")}
+                    title={t("profile.switch")}
+                    onChange={(event) => {
+                      setActiveProfileId(event.target.value);
+                      void refreshAll(event.target.value);
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                </HeaderSelect>
+                <LearningSetupSelect
+                  label={t("setup.label")}
+                  value={activeSetup?.id ?? ""}
+                  setups={learningSetups}
+                  locale={activeProfile.uiLanguage}
+                  onChange={async (setupId) => {
+                    await db.profiles.update(activeProfile.id, { activeLearningSetupId: setupId, updatedAt: nowIso() });
+                    await refreshAll(activeProfile.id);
+                    setMobileMenuOpen(false);
+                  }}
+                />
+              </section>
+
+              <section className="grid gap-2" aria-label={t("nav.menu")}>
+                <NavButton
+                  icon={<BookOpen size={18} />}
+                  label={t("nav.study")}
+                  active={view === "study"}
+                  onClick={() => {
+                    setView("study");
+                    setMobileMenuOpen(false);
+                  }}
+                />
+                <NavButton
+                  icon={<Search size={18} />}
+                  label={t("nav.library")}
+                  active={view === "library"}
+                  onClick={() => {
+                    setView("library");
+                    setMobileMenuOpen(false);
+                  }}
+                />
+                <NavButton
+                  icon={<Layers size={18} />}
+                  label={t("nav.decks")}
+                  active={view === "decks"}
+                  onClick={() => {
+                    setView("decks");
+                    setMobileMenuOpen(false);
+                  }}
+                />
+                <NavButton
+                  icon={<Settings size={18} />}
+                  label={t("nav.settings")}
+                  active={view === "settings"}
+                  onClick={() => {
+                    setView("settings");
+                    setMobileMenuOpen(false);
+                  }}
+                />
+              </section>
+
+              <section className="grid gap-2">
+                <UsageBadge usage={usage} />
+                <ConnectionBadge online={isOnline} />
+              </section>
+            </div>
+          </aside>
+        </div>
+      ) : null}
 
       {status ? (
         <div className="app-status app-glass border-b px-4 py-2 text-center text-sm font-semibold">
@@ -448,8 +558,6 @@ export default function App() {
             decks={decks}
             words={words}
             usage={usage}
-            theme={theme}
-            onThemeChange={setTheme}
             onRefresh={refreshAll}
             onStatus={setStatus}
           />
@@ -964,10 +1072,10 @@ function StudyView({
       <ViewTitle title={t("study.title")} />
       <div className="app-panel grid gap-3 p-4">
         <p className="app-muted text-sm">{t("study.setupHelp")}</p>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
           <ScopeSelect scope={scope} setScope={setScope} decks={decks} subsets={subsets} />
           <DirectionPicker value={direction} setup={setup} onChange={setDirection} />
-          <Metric label={t("common.due")} value={dueCount.toString()} compact hint={t("study.dueHint")} />
+          <DueStatus count={dueCount} />
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="app-button app-button-primary" onClick={() => startSession(false)} disabled={activePairWords.length === 0} title={t("study.startHint")}>
@@ -1591,8 +1699,6 @@ function SettingsView({
   decks,
   words,
   usage,
-  theme,
-  onThemeChange,
   onRefresh,
   onStatus
 }: {
@@ -1603,8 +1709,6 @@ function SettingsView({
   decks: Deck[];
   words: WordEntry[];
   usage: TranslationUsage | null;
-  theme: ThemeMode;
-  onThemeChange: (theme: ThemeMode) => void;
   onRefresh: () => Promise<void>;
   onStatus: (message: string) => void;
 }) {
@@ -1646,11 +1750,6 @@ function SettingsView({
       cancelled = true;
     };
   }, [learningSetups]);
-
-  async function updateUiLanguage(value: LanguageCode) {
-    await db.profiles.update(profile.id, { uiLanguage: value, updatedAt: nowIso() });
-    await onRefresh();
-  }
 
   async function createAdditionalProfile(event: FormEvent) {
     event.preventDefault();
@@ -1881,33 +1980,6 @@ function SettingsView({
     <section className="grid min-w-0 gap-4">
       <ViewTitle title={t("settings.title")} />
       <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        <div className="app-panel grid min-w-0 gap-3 p-4">
-          <h2 className="app-heading text-base font-semibold">{t("settings.languages")}</h2>
-          <LanguageSelect label={t("profile.uiLanguage")} value={profile.uiLanguage} onChange={updateUiLanguage} />
-          <Label text={t("settings.theme")}>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                className={`app-button min-w-0 ${theme === "light" ? "app-button-primary" : "app-button-secondary"}`}
-                type="button"
-                onClick={() => onThemeChange("light")}
-                aria-pressed={theme === "light"}
-              >
-                <Sun size={16} />
-                {t("settings.themeLight")}
-              </button>
-              <button
-                className={`app-button min-w-0 ${theme === "dark" ? "app-button-primary" : "app-button-secondary"}`}
-                type="button"
-                onClick={() => onThemeChange("dark")}
-                aria-pressed={theme === "dark"}
-              >
-                <Moon size={16} />
-                {t("settings.themeDark")}
-              </button>
-            </div>
-          </Label>
-        </div>
-
         <form className="app-panel grid min-w-0 gap-3 p-4" onSubmit={createAdditionalProfile}>
           <h2 className="app-heading text-base font-semibold">{t("profile.createAnother")}</h2>
           <Label text={t("profile.name")}>
@@ -2118,14 +2190,14 @@ function SettingsView({
   );
 }
 
-function UsageBadge({ usage }: { usage: TranslationUsage | null }) {
+function UsageBadge({ usage, compact = false }: { usage: TranslationUsage | null; compact?: boolean }) {
   const { t } = useTranslation();
   const count = usage?.count ?? 0;
   const remaining = Math.max(0, myMemoryDailyLimit - count);
   const percent = Math.min(100, Math.round((count / myMemoryDailyLimit) * 100));
 
   return (
-    <div className="app-warning w-full min-w-0 rounded-xl border px-3 py-2 text-sm" title={t("settings.usage")}>
+    <div className={`app-warning w-full min-w-0 rounded-xl border px-3 py-2 text-sm ${compact ? "status-badge-compact" : ""}`} title={t("settings.usage")}>
       <div className="flex items-center justify-between gap-2 font-semibold">
         <span>{t("settings.usage")}</span>
         <span>{percent}%</span>
@@ -2138,12 +2210,12 @@ function UsageBadge({ usage }: { usage: TranslationUsage | null }) {
   );
 }
 
-function ConnectionBadge({ online }: { online: boolean }) {
+function ConnectionBadge({ online, compact = false }: { online: boolean; compact?: boolean }) {
   const { t } = useTranslation();
 
   return (
     <div
-      className={`w-full min-w-0 rounded-xl border px-3 py-2 text-sm font-semibold ${
+      className={`w-full min-w-0 rounded-xl border px-3 py-2 text-sm font-semibold ${compact ? "status-badge-compact" : ""} ${
         online ? "app-success" : "app-danger-surface"
       }`}
       role="status"
@@ -2273,6 +2345,17 @@ function DirectionPicker({
   );
 }
 
+function DueStatus({ count }: { count: number }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="due-status" title={t("study.dueHint")}>
+      <span className="app-subtle text-xs font-semibold uppercase tracking-wide">{t("common.due")}</span>
+      <span className="app-heading text-lg font-bold">{count}</span>
+    </div>
+  );
+}
+
 function LanguageSelect({
   label,
   value,
@@ -2377,6 +2460,176 @@ function LanguageSelect({
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function CompactLanguageSelect({
+  label,
+  value,
+  onChange,
+  iconOnly = false
+}: {
+  label?: string;
+  value: LanguageCode;
+  onChange: (value: LanguageCode) => void;
+  iconOnly?: boolean;
+}) {
+  const { i18n } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const selectedIndex = Math.max(0, languageCodes.findIndex((code) => code === value));
+
+  function selectByIndex(index: number) {
+    const next = languageCodes[index];
+    if (next) {
+      onChange(next);
+    }
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setOpen((current) => !current);
+      return;
+    }
+
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      return;
+    }
+
+    event.preventDefault();
+    setOpen(true);
+
+    if (event.key === "Home") {
+      selectByIndex(0);
+      return;
+    }
+
+    if (event.key === "End") {
+      selectByIndex(languageCodes.length - 1);
+      return;
+    }
+
+    const offset = event.key === "ArrowDown" ? 1 : -1;
+    selectByIndex((selectedIndex + offset + languageCodes.length) % languageCodes.length);
+  }
+
+  return (
+    <div className="relative grid min-w-0 gap-1" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
+      {label && !iconOnly ? <span className="app-label text-sm font-semibold">{label}</span> : null}
+      <button
+        className={`${
+          iconOnly
+            ? "app-icon-select"
+            : "app-input app-input-compact flex min-h-9 min-w-0 items-center justify-between gap-2 text-left"
+        }`}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title={languageOptionLabel(value, i18n.language)}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={handleKeyDown}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <FlagIcon code={value} />
+          {iconOnly ? null : <span className="truncate">{languageOptionLabel(value, i18n.language)}</span>}
+        </span>
+        <ChevronRight className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} size={iconOnly ? 14 : 15} />
+      </button>
+      {open ? (
+        <div
+          className={`app-panel absolute top-full z-40 mt-1 max-h-64 overflow-auto p-1 ${
+            iconOnly ? "right-0 w-56" : "w-full"
+          }`}
+          role="listbox"
+        >
+          {languageCodes.map((code) => (
+            <button
+              key={code}
+              className={`dropdown-option flex w-full min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm ${
+                code === value ? "dropdown-option-active" : ""
+              }`}
+              type="button"
+              role="option"
+              aria-selected={code === value}
+              onClick={() => {
+                onChange(code);
+                setOpen(false);
+              }}
+            >
+              <FlagIcon code={code} />
+              <span className="truncate">{languageOptionLabel(code, i18n.language)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ThemeToggle({
+  value,
+  onChange,
+  compact = false
+}: {
+  value: ThemeMode;
+  onChange: (value: ThemeMode) => void;
+  compact?: boolean;
+}) {
+  const { t } = useTranslation();
+  const nextTheme = value === "dark" ? "light" : "dark";
+
+  return (
+    <div className={compact ? "min-w-0" : "grid min-w-0 gap-1"}>
+      {compact ? null : <span className="app-label text-sm font-semibold">{t("settings.theme")}</span>}
+      <button
+        className={`theme-toggle ${compact ? "theme-toggle-compact" : ""}`}
+        type="button"
+        role="switch"
+        aria-checked={value === "dark"}
+        title={value === "dark" ? t("settings.themeDark") : t("settings.themeLight")}
+        onClick={() => onChange(nextTheme)}
+      >
+        <span className="theme-toggle-track" aria-hidden="true">
+          <span className="theme-toggle-thumb">
+          {value === "dark" ? <Moon size={14} /> : <Sun size={14} />}
+        </span>
+      </span>
+        {compact ? null : <span className="theme-toggle-label">
+          {value === "dark" ? t("settings.themeDark") : t("settings.themeLight")}
+        </span>}
+      </button>
+    </div>
+  );
+}
+
+function ChromePreferences({
+  uiLanguage,
+  theme,
+  onLanguageChange,
+  onThemeChange
+}: {
+  uiLanguage: LanguageCode;
+  theme: ThemeMode;
+  onLanguageChange: (value: LanguageCode) => void;
+  onThemeChange: (value: ThemeMode) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="chrome-preferences" aria-label={t("settings.preferences")}>
+      <CompactLanguageSelect
+        label={t("profile.uiLanguage")}
+        value={uiLanguage}
+        onChange={onLanguageChange}
+        iconOnly
+      />
+      <ThemeToggle value={theme} onChange={onThemeChange} compact />
     </div>
   );
 }
