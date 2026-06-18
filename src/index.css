@@ -385,12 +385,12 @@ textarea:focus-visible {
   background: var(--input-bg);
   padding: 0.5rem 0.75rem;
   color: var(--input-text);
-  transition: border-color 150ms ease, background 150ms ease;
+  transition: border-color 150ms ease, background-color 150ms ease;
 }
 
 .app-input:focus {
   border-color: var(--input-focus-border);
-  background: var(--input-focus-bg);
+  background-color: var(--input-focus-bg);
   outline: none;
 }
 

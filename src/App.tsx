@@ -1,6 +1,7 @@
 import {
   BookOpen,
   Check,
+  ChevronLeft,
   ChevronRight,
   Download,
   Edit2,
@@ -114,6 +115,7 @@ const cloudFolderStorageKey = "lexora.cloud.folderPath";
 const cloudAutoBackupStorageKey = "lexora.cloud.autoBackup";
 const defaultCloudBackupFolder = "Lexora/Backups";
 const latestCloudBackupFilename = "lexora-backup-latest.json";
+const libraryPageSizeOptions = [10, 25, 50, 100];
 
 function readStoredTheme(): ThemeMode {
   const stored = localStorage.getItem(themeStorageKey);
@@ -1203,12 +1205,12 @@ function LibraryView({
   const [showWordDetails, setShowWordDetails] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [wordPage, setWordPage] = useState(1);
+  const [wordsPerPage, setWordsPerPage] = useState(10);
   const [wordFormSubmitted, setWordFormSubmitted] = useState(false);
   const translationLimitReached = (usage?.count ?? 0) >= myMemoryDailyLimit;
   const translationCount = usage?.count ?? 0;
   const translationRemaining = Math.max(0, myMemoryDailyLimit - translationCount);
   const translationQuotaPercent = Math.min(100, Math.round((translationCount / myMemoryDailyLimit) * 100));
-  const wordsPerPage = 50;
   const duplicateWord = useMemo(() => {
     const candidate = normalizeDuplicateText(form.targetText);
     if (!candidate) {
@@ -1268,11 +1270,39 @@ function LibraryView({
 
   useEffect(() => {
     setWordPage(1);
-  }, [deckFilter, query, statusFilter]);
+  }, [deckFilter, query, statusFilter, wordsPerPage]);
 
   useEffect(() => {
     setWordPage((current) => Math.min(current, wordPageCount));
   }, [wordPageCount]);
+
+  const wordPager = filteredWords.length > 0 ? (
+    <div className="flex items-center gap-2">
+      <button
+        className="app-button app-button-secondary app-icon-button"
+        type="button"
+        onClick={() => setWordPage((current) => Math.max(1, current - 1))}
+        disabled={safeWordPage <= 1}
+        aria-label={t("common.previous")}
+        data-tooltip={t("common.previous")}
+      >
+        <ChevronLeft size={17} />
+      </button>
+      <span className="app-subtle min-w-12 text-center text-xs font-semibold">
+        {safeWordPage} / {wordPageCount}
+      </span>
+      <button
+        className="app-button app-button-secondary app-icon-button"
+        type="button"
+        onClick={() => setWordPage((current) => Math.min(wordPageCount, current + 1))}
+        disabled={safeWordPage >= wordPageCount}
+        aria-label={t("common.next")}
+        data-tooltip={t("common.next")}
+      >
+        <ChevronRight size={17} />
+      </button>
+    </div>
+  ) : null;
 
   async function fetchSuggestions(automatic = false) {
     const targetText = form.targetText.trim();
@@ -1592,15 +1622,34 @@ function LibraryView({
       </div>
 
       <div className="app-panel overflow-hidden">
-        <div className="app-divider flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2.5">
-          <div className="app-muted text-sm font-semibold">
-            {filteredWords.length} / {words.length} {t("common.word")}
-          </div>
-          {filteredWords.length > 0 ? (
-            <div className="app-subtle text-xs">
-              {wordPageStart}-{wordPageEnd} · {t("library.page", { page: safeWordPage, pages: wordPageCount })}
+        <div className="app-divider flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2.5">
+          <div className="min-w-0">
+            <div className="app-muted text-sm font-semibold">
+              {filteredWords.length} / {words.length} {t("common.word")}
             </div>
-          ) : null}
+            {filteredWords.length > 0 ? (
+              <div className="app-subtle text-xs">
+                {wordPageStart}-{wordPageEnd} · {t("library.page", { page: safeWordPage, pages: wordPageCount })}
+              </div>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="app-subtle flex items-center gap-2 text-xs font-semibold">
+              <span className="sr-only">{t("library.pageSize")}</span>
+              <select
+                className="app-input app-input-compact w-20"
+                value={wordsPerPage}
+                onChange={(event) => setWordsPerPage(Number(event.target.value))}
+                aria-label={t("library.pageSize")}
+                data-tooltip={t("library.pageSizeHint")}
+              >
+                {libraryPageSizeOptions.map((pageSize) => (
+                  <option key={pageSize} value={pageSize}>{pageSize}</option>
+                ))}
+              </select>
+            </label>
+            {wordPager}
+          </div>
         </div>
         {filteredWords.length === 0 ? (
           <div className="app-muted p-4">{t("library.noWords")}</div>
@@ -1631,26 +1680,8 @@ function LibraryView({
           </article>
         ))}
         {wordPageCount > 1 ? (
-          <div className="app-divider flex items-center justify-between gap-2 border-t px-3 py-2.5">
-            <button
-              className="app-button app-button-secondary app-button-compact"
-              type="button"
-              onClick={() => setWordPage((current) => Math.max(1, current - 1))}
-              disabled={safeWordPage <= 1}
-              data-tooltip={t("common.previous")}
-            >
-              {t("common.previous")}
-            </button>
-            <span className="app-subtle text-xs font-semibold">{safeWordPage} / {wordPageCount}</span>
-            <button
-              className="app-button app-button-secondary app-button-compact"
-              type="button"
-              onClick={() => setWordPage((current) => Math.min(wordPageCount, current + 1))}
-              disabled={safeWordPage >= wordPageCount}
-              data-tooltip={t("common.next")}
-            >
-              {t("common.next")}
-            </button>
+          <div className="app-divider flex items-center justify-end gap-2 border-t px-3 py-2.5">
+            {wordPager}
           </div>
         ) : null}
       </div>
