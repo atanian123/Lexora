@@ -66,6 +66,8 @@ import { createId, nowIso } from "./lib/ids";
 import { evaluateAnswer, type MatchResult } from "./lib/matching";
 import { scheduleReview } from "./lib/srs";
 import { fetchTranslationSuggestions, getTodayTranslationUsage } from "./lib/translation";
+import { ConfirmationProvider, useConfirm } from "./components/confirmation";
+import { FlagIcon, HeaderSelect, Label, Metric, NavButton, ViewTitle } from "./components/ui";
 
 type ViewKey = "study" | "library" | "decks" | "settings";
 type ThemeMode = "light" | "dark";
@@ -276,6 +278,7 @@ export default function App() {
   }
 
   return (
+    <ConfirmationProvider>
     <div className="app-shell">
       <header className="app-header app-glass sticky top-0 z-30 border-b">
         <div className="mx-auto grid max-w-7xl gap-3 px-4 py-3 sm:px-6">
@@ -565,6 +568,7 @@ export default function App() {
         ) : null}
       </main>
     </div>
+    </ConfirmationProvider>
   );
 }
 
@@ -1121,6 +1125,7 @@ function LibraryView({
   onStatus: (message: string) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const confirm = useConfirm();
   const [form, setForm] = useState<WordFormState>(() => ({ ...emptyWordForm, deckId: decks[0]?.id ?? "" }));
   const [suggestions, setSuggestions] = useState<TranslationResult[]>([]);
   const [fetching, setFetching] = useState(false);
@@ -1130,10 +1135,21 @@ function LibraryView({
   const [statusFilter, setStatusFilter] = useState<ReviewStatus>("all");
   const [showWordDetails, setShowWordDetails] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [wordPage, setWordPage] = useState(1);
+  const [wordFormSubmitted, setWordFormSubmitted] = useState(false);
   const translationLimitReached = (usage?.count ?? 0) >= myMemoryDailyLimit;
   const translationCount = usage?.count ?? 0;
   const translationRemaining = Math.max(0, myMemoryDailyLimit - translationCount);
   const translationQuotaPercent = Math.min(100, Math.round((translationCount / myMemoryDailyLimit) * 100));
+  const wordsPerPage = 50;
+  const duplicateWord = useMemo(() => {
+    const candidate = normalizeDuplicateText(form.targetText);
+    if (!candidate) {
+      return undefined;
+    }
+
+    return words.find((word) => word.id !== form.id && normalizeDuplicateText(word.targetText) === candidate);
+  }, [form.id, form.targetText, words]);
 
   useEffect(() => {
     if (!form.deckId && decks[0]) {
@@ -1162,7 +1178,7 @@ function LibraryView({
   }, [fetching, form.id, form.targetText, form.translations, lastAutoSuggestedText, translationLimitReached]);
 
   const cardByWord = useMemo(() => groupCardsByWord(cards), [cards]);
-  const filteredWords = words.filter((word) => {
+  const filteredWords = useMemo(() => words.filter((word) => {
     const haystack = `${word.targetText} ${word.translations.join(" ")} ${word.notes}`.toLocaleLowerCase();
     const matchesQuery = !query || haystack.includes(query.toLocaleLowerCase());
     const matchesDeck = deckFilter === "all" || word.deckId === deckFilter;
@@ -1174,7 +1190,22 @@ function LibraryView({
       (statusFilter === "learned" && wordCards.some((card) => card.reviewCount > 0));
 
     return matchesQuery && matchesDeck && matchesStatus;
-  });
+  }), [cardByWord, deckFilter, query, statusFilter, words]);
+  const wordPageCount = Math.max(1, Math.ceil(filteredWords.length / wordsPerPage));
+  const safeWordPage = Math.min(wordPage, wordPageCount);
+  const wordPageStart = filteredWords.length === 0 ? 0 : (safeWordPage - 1) * wordsPerPage + 1;
+  const wordPageEnd = Math.min(safeWordPage * wordsPerPage, filteredWords.length);
+  const pagedWords = filteredWords.slice((safeWordPage - 1) * wordsPerPage, safeWordPage * wordsPerPage);
+  const targetMissing = wordFormSubmitted && !form.targetText.trim();
+  const translationsMissing = wordFormSubmitted && splitTranslations(form.translations).length === 0;
+
+  useEffect(() => {
+    setWordPage(1);
+  }, [deckFilter, query, statusFilter]);
+
+  useEffect(() => {
+    setWordPage((current) => Math.min(current, wordPageCount));
+  }, [wordPageCount]);
 
   async function fetchSuggestions(automatic = false) {
     const targetText = form.targetText.trim();
@@ -1206,9 +1237,22 @@ function LibraryView({
 
   async function saveWord(event: FormEvent) {
     event.preventDefault();
+    setWordFormSubmitted(true);
     const translations = splitTranslations(form.translations);
     if (!form.targetText.trim() || translations.length === 0 || !form.deckId) {
       return;
+    }
+
+    if (duplicateWord) {
+      const addDuplicate = await confirm({
+        title: t("library.duplicateTitle"),
+        message: t("library.duplicateBody", { word: duplicateWord.targetText }),
+        confirmLabel: t("library.addDuplicate"),
+        cancelLabel: t("common.cancel")
+      });
+      if (!addDuplicate) {
+        return;
+      }
     }
 
     const timestamp = nowIso();
@@ -1239,11 +1283,23 @@ function LibraryView({
     setForm({ ...emptyWordForm, deckId: decks[0]?.id ?? "" });
     setSuggestions([]);
     setShowWordDetails(false);
+    setWordFormSubmitted(false);
     onStatus(t("status.saved"));
     await onRefresh();
   }
 
   async function deleteWord(word: WordEntry) {
+    const confirmed = await confirm({
+      title: t("common.confirmDeleteTitle"),
+      message: `${t("common.confirmDelete")}\n\n${word.targetText}`,
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      variant: "danger"
+    });
+    if (!confirmed) {
+      return;
+    }
+
     await db.transaction("rw", db.words, db.cards, db.subsets, async () => {
       await db.words.delete(word.id);
       const wordCards = await db.cards.where("wordId").equals(word.id).toArray();
@@ -1266,6 +1322,7 @@ function LibraryView({
     setForm({ ...emptyWordForm, deckId: decks[0]?.id ?? "" });
     setSuggestions([]);
     setShowWordDetails(false);
+    setWordFormSubmitted(false);
   }
 
   function editWord(word: WordEntry) {
@@ -1278,12 +1335,13 @@ function LibraryView({
     });
     setSuggestions([]);
     setShowWordDetails(true);
+    setWordFormSubmitted(false);
   }
 
   return (
     <section className="grid gap-4">
       <ViewTitle title={t("library.title")} />
-      <form className="app-panel grid gap-3 p-4" onSubmit={saveWord}>
+      <form className="app-panel grid gap-3 p-4" onSubmit={saveWord} noValidate>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <h2 className="app-heading text-base font-semibold">{form.id ? t("common.edit") : t("library.addWord")}</h2>
@@ -1312,14 +1370,26 @@ function LibraryView({
             }
           >
             <input
-              className="app-input"
+              className={`app-input ${duplicateWord || targetMissing ? "app-input-warning" : ""}`}
               value={form.targetText}
               onChange={(event) => setForm({ ...form, targetText: event.target.value })}
               placeholder={t("library.targetPlaceholder")}
-              required
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              aria-invalid={targetMissing}
             />
+            {targetMissing ? <span className="app-warning-text text-xs">{t("library.targetRequired")}</span> : null}
+            {duplicateWord ? <span className="app-warning-text text-xs">{t("library.duplicateInline")}</span> : null}
           </Label>
-          <button className="app-button app-button-secondary" type="button" onClick={() => fetchSuggestions(false)} disabled={fetching || !form.targetText.trim() || translationLimitReached} data-tooltip={t("library.fetchSuggestions")}>
+          <button
+            className="app-button app-button-secondary"
+            type="button"
+            onClick={() => fetchSuggestions(false)}
+            disabled={fetching || !form.targetText.trim() || translationLimitReached}
+            data-tooltip={t("library.fetchSuggestions")}
+            data-tooltip-placement="top"
+          >
             <Search size={18} />
             {t("library.fetchSuggestions")}
           </button>
@@ -1345,6 +1415,33 @@ function LibraryView({
             ))}
           </div>
         ) : null}
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <Label
+            text={
+              <span className="flex items-center gap-1">
+                <FlagIcon code={setup.baseLanguage} />
+                {t("common.translations")}
+              </span>
+            }
+          >
+            <input
+              className={`app-input ${translationsMissing ? "app-input-warning" : ""}`}
+              value={form.translations}
+              onChange={(event) => setForm({ ...form, translations: event.target.value })}
+              placeholder={t("library.translationHint")}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              aria-invalid={translationsMissing}
+            />
+            {translationsMissing ? <span className="app-warning-text text-xs">{t("library.translationsRequired")}</span> : null}
+          </Label>
+          <button className="app-button app-button-primary" type="submit" data-tooltip={form.id ? t("common.save") : t("common.add")}>
+            <Plus size={18} />
+            {form.id ? t("common.save") : t("common.add")}
+          </button>
+        </div>
+
         <div
           className={`flex items-center justify-between gap-3 rounded-md border px-2.5 py-1.5 text-xs ${
             translationLimitReached
@@ -1359,29 +1456,6 @@ function LibraryView({
           <span className="font-semibold">
             {translationRemaining} / {myMemoryDailyLimit} {t("settings.requestsRemaining")}
           </span>
-        </div>
-
-        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-          <Label
-            text={
-              <span className="flex items-center gap-1">
-                <FlagIcon code={setup.baseLanguage} />
-                {t("common.translations")}
-              </span>
-            }
-          >
-            <input
-              className="app-input"
-              value={form.translations}
-              onChange={(event) => setForm({ ...form, translations: event.target.value })}
-              placeholder={t("library.translationHint")}
-              required
-            />
-          </Label>
-          <button className="app-button app-button-primary" type="submit" data-tooltip={form.id ? t("common.save") : t("common.add")}>
-            <Plus size={18} />
-            {form.id ? t("common.save") : t("common.add")}
-          </button>
         </div>
 
         {showWordDetails ? (
@@ -1411,7 +1485,15 @@ function LibraryView({
       <div className="app-panel grid gap-3 p-4">
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
           <Label text={t("common.search")}>
-            <input className="app-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("library.searchPlaceholder")} />
+            <input
+              className="app-input"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("library.searchPlaceholder")}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
           </Label>
           <button className="app-button app-button-secondary" type="button" onClick={() => setShowFilters((visible) => !visible)} data-tooltip={t("library.filters")}>
             <Search size={16} />
@@ -1443,10 +1525,20 @@ function LibraryView({
       </div>
 
       <div className="app-panel overflow-hidden">
+        <div className="app-divider flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2.5">
+          <div className="app-muted text-sm font-semibold">
+            {filteredWords.length} / {words.length} {t("common.word")}
+          </div>
+          {filteredWords.length > 0 ? (
+            <div className="app-subtle text-xs">
+              {wordPageStart}-{wordPageEnd} · {t("library.page", { page: safeWordPage, pages: wordPageCount })}
+            </div>
+          ) : null}
+        </div>
         {filteredWords.length === 0 ? (
           <div className="app-muted p-4">{t("library.noWords")}</div>
         ) : null}
-        {filteredWords.map((word) => (
+        {pagedWords.map((word) => (
           <article key={word.id} className="app-divider border-t px-3 py-2.5 first:border-t-0">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -1471,6 +1563,29 @@ function LibraryView({
             </div>
           </article>
         ))}
+        {wordPageCount > 1 ? (
+          <div className="app-divider flex items-center justify-between gap-2 border-t px-3 py-2.5">
+            <button
+              className="app-button app-button-secondary app-button-compact"
+              type="button"
+              onClick={() => setWordPage((current) => Math.max(1, current - 1))}
+              disabled={safeWordPage <= 1}
+              data-tooltip={t("common.previous")}
+            >
+              {t("common.previous")}
+            </button>
+            <span className="app-subtle text-xs font-semibold">{safeWordPage} / {wordPageCount}</span>
+            <button
+              className="app-button app-button-secondary app-button-compact"
+              type="button"
+              onClick={() => setWordPage((current) => Math.min(wordPageCount, current + 1))}
+              disabled={safeWordPage >= wordPageCount}
+              data-tooltip={t("common.next")}
+            >
+              {t("common.next")}
+            </button>
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -1494,6 +1609,7 @@ function DecksView({
   onStatus: (message: string) => void;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [deckName, setDeckName] = useState("");
   const [editingSubsetId, setEditingSubsetId] = useState<string | null>(null);
   const [subsetName, setSubsetName] = useState("");
@@ -1530,11 +1646,27 @@ function DecksView({
   }
 
   async function deleteDeck(deck: Deck) {
+    const confirmed = await confirm({
+      title: t("common.confirmDeleteTitle"),
+      message: `${t("common.confirmDelete")}\n\n${deck.name}`,
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      variant: "danger"
+    });
+    if (!confirmed) {
+      return;
+    }
+
     const deckWords = words.filter((word) => word.deckId === deck.id);
     const otherDeck = decks.find((candidate) => candidate.id !== deck.id);
 
     if (deckWords.length > 0 && otherDeck) {
-      const reassign = window.confirm(`${t("decks.reassignWords")}: ${otherDeck.name}?`);
+      const reassign = await confirm({
+        title: t("decks.reassignWords"),
+        message: otherDeck.name,
+        confirmLabel: t("decks.reassignWords"),
+        cancelLabel: t("decks.deleteWords")
+      });
       await deleteDeckWithWords(deck.id, reassign ? "reassign" : "delete", reassign ? otherDeck.id : undefined);
     } else {
       await deleteDeckWithWords(deck.id, "delete");
@@ -1589,6 +1721,17 @@ function DecksView({
   }
 
   async function deleteSubset(subset: CustomSubset) {
+    const confirmed = await confirm({
+      title: t("common.confirmDeleteTitle"),
+      message: `${t("common.confirmDelete")}\n\n${subset.name}`,
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      variant: "danger"
+    });
+    if (!confirmed) {
+      return;
+    }
+
     await db.subsets.delete(subset.id);
     onStatus(t("status.deleted"));
     await onRefresh();
@@ -1721,6 +1864,7 @@ function SettingsView({
   onStatus: (message: string) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const confirm = useConfirm();
   const backupMergeInputRef = useRef<HTMLInputElement>(null);
   const backupReplaceInputRef = useRef<HTMLInputElement>(null);
   const csvImportInputRef = useRef<HTMLInputElement>(null);
@@ -1795,7 +1939,14 @@ function SettingsView({
   }
 
   async function removeSetup(setup: LearningSetup) {
-    if (!window.confirm(`${t("setup.delete")}\n\n${setup.name}`)) {
+    const confirmed = await confirm({
+      title: t("setup.delete"),
+      message: setup.name,
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      variant: "danger"
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -1829,7 +1980,14 @@ function SettingsView({
   }
 
   async function resetData() {
-    if (!window.confirm(`${t("settings.resetAll")}\n\n${t("settings.resetWarning")}`)) {
+    const confirmed = await confirm({
+      title: t("settings.resetAll"),
+      message: t("settings.resetWarning"),
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      variant: "danger"
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -1863,8 +2021,17 @@ function SettingsView({
       return;
     }
 
-    if (mode === "replace" && !window.confirm(`${t("settings.importBackupReplace")}\n\n${t("settings.importBackupReplaceWarning")}`)) {
-      return;
+    if (mode === "replace") {
+      const confirmed = await confirm({
+        title: t("settings.importBackupReplace"),
+        message: t("settings.importBackupReplaceWarning"),
+        confirmLabel: t("settings.importBackupReplace"),
+        cancelLabel: t("common.cancel"),
+        variant: "danger"
+      });
+      if (!confirmed) {
+        return;
+      }
     }
 
     try {
@@ -2659,24 +2826,6 @@ function ChromePreferences({
   );
 }
 
-function Label({ text, children }: { text: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <label className="app-label grid min-w-0 gap-1 text-sm font-semibold">
-      <span>{text}</span>
-      {children}
-    </label>
-  );
-}
-
-function HeaderSelect({ label, children, tooltip }: { label: string; children: React.ReactNode; tooltip?: string }) {
-  return (
-    <label className="app-subtle grid min-w-0 gap-1 text-xs font-semibold uppercase tracking-wide" data-tooltip={tooltip}>
-      <span className="truncate">{label}</span>
-      {children}
-    </label>
-  );
-}
-
 function LearningSetupSelect({
   label,
   value,
@@ -2801,47 +2950,6 @@ function LearningSetupSelect({
   );
 }
 
-function ViewTitle({ title }: { title: string }) {
-  return <h2 className="app-heading text-2xl font-bold tracking-tight">{title}</h2>;
-}
-
-function Metric({ label, value, compact = false, hint }: { label: string; value: string; compact?: boolean; hint?: string }) {
-  return (
-    <div className={`app-panel ${compact ? "p-3" : "p-4"}`} data-tooltip={hint} tabIndex={hint ? 0 : undefined}>
-      <p className="app-muted text-sm font-semibold">{label}</p>
-      <p className="app-heading text-2xl font-bold">{value}</p>
-      {hint ? <p className="app-subtle mt-1 text-xs leading-relaxed">{hint}</p> : null}
-    </div>
-  );
-}
-
-function NavButton({
-  icon,
-  label,
-  active,
-  onClick
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className={`flex min-h-10 w-full items-center gap-2 rounded-lg border px-3 text-sm font-semibold sm:min-h-11 sm:w-auto sm:rounded-none sm:border-x-0 sm:border-t-0 sm:border-b-2 ${
-        active
-          ? "nav-button-active"
-          : "nav-button-inactive"
-      }`}
-      onClick={onClick}
-      data-tooltip={label}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
-
 function currentNavLabel(view: ViewKey, t: (key: string) => string): string {
   const labels: Record<ViewKey, string> = {
     study: t("nav.study"),
@@ -2851,80 +2959,6 @@ function currentNavLabel(view: ViewKey, t: (key: string) => string): string {
   };
 
   return labels[view];
-}
-
-function FlagIcon({ code }: { code: LanguageCode }) {
-  const common = "h-4 w-6 shrink-0 overflow-hidden rounded-[3px] border border-slate-300 shadow-sm";
-
-  if (code === "de") {
-    return (
-      <svg className={common} viewBox="0 0 30 20" aria-hidden="true">
-        <rect width="30" height="20" fill="#ffce00" />
-        <rect width="30" height="13.33" fill="#dd0000" />
-        <rect width="30" height="6.67" fill="#000000" />
-      </svg>
-    );
-  }
-
-  if (code === "fr") {
-    return (
-      <svg className={common} viewBox="0 0 30 20" aria-hidden="true">
-        <rect width="10" height="20" fill="#002395" />
-        <rect x="10" width="10" height="20" fill="#ffffff" />
-        <rect x="20" width="10" height="20" fill="#ed2939" />
-      </svg>
-    );
-  }
-
-  if (code === "it") {
-    return (
-      <svg className={common} viewBox="0 0 30 20" aria-hidden="true">
-        <rect width="10" height="20" fill="#009246" />
-        <rect x="10" width="10" height="20" fill="#ffffff" />
-        <rect x="20" width="10" height="20" fill="#ce2b37" />
-      </svg>
-    );
-  }
-
-  if (code === "es") {
-    return (
-      <svg className={common} viewBox="0 0 30 20" aria-hidden="true">
-        <rect width="30" height="20" fill="#aa151b" />
-        <rect y="5" width="30" height="10" fill="#f1bf00" />
-      </svg>
-    );
-  }
-
-  if (code === "pt") {
-    return (
-      <svg className={common} viewBox="0 0 30 20" aria-hidden="true">
-        <rect width="12" height="20" fill="#006600" />
-        <rect x="12" width="18" height="20" fill="#ff0000" />
-        <circle cx="12" cy="10" r="3.4" fill="#ffcc00" />
-        <circle cx="12" cy="10" r="2.1" fill="#ffffff" />
-      </svg>
-    );
-  }
-
-  if (code === "ru") {
-    return (
-      <svg className={common} viewBox="0 0 30 20" aria-hidden="true">
-        <rect width="30" height="20" fill="#d52b1e" />
-        <rect width="30" height="13.33" fill="#0039a6" />
-        <rect width="30" height="6.67" fill="#ffffff" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg className={common} viewBox="0 0 30 20" aria-hidden="true">
-      <rect width="30" height="20" fill="#012169" />
-      <path d="M0 0L30 20M30 0L0 20" stroke="#ffffff" strokeWidth="4" />
-      <path d="M0 0L30 20M30 0L0 20" stroke="#c8102e" strokeWidth="2" />
-      <path d="M15 0V20M0 10H30" stroke="#ffffff" strokeWidth="7" />
-      <path d="M15 0V20M0 10H30" stroke="#c8102e" strokeWidth="4" />
-    </svg>
-  );
 }
 
 function filterWordsByScope(words: WordEntry[], scope: ScopeSelection, subsets: CustomSubset[]): WordEntry[] {
@@ -3025,6 +3059,10 @@ function splitTranslations(value: string): string[] {
     .split(";")
     .map((translation) => translation.trim())
     .filter(Boolean);
+}
+
+function normalizeDuplicateText(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
 function groupCardsByWord(cards: CardState[]): Map<string, CardState[]> {

@@ -39,7 +39,12 @@ const en = {
     translations: "Translations",
     notes: "Notes",
     optional: "Optional",
-    today: "Today"
+    today: "Today",
+    previous: "Previous",
+    next: "Next",
+    confirm: "Confirm",
+    confirmDeleteTitle: "Confirm deletion",
+    confirmDelete: "Delete this item? This cannot be undone."
   },
   profile: {
     label: "Profile",
@@ -87,8 +92,15 @@ const en = {
     reviewStatus: "Review status",
     languagePair: "Language pair",
     noWords: "Add your first word or phrase to begin.",
+    page: "Page {{page}} of {{pages}}",
     exportJson: "Export JSON",
-    exportCsv: "Export CSV"
+    exportCsv: "Export CSV",
+    duplicateTitle: "Duplicate word",
+    duplicateBody: "\"{{word}}\" already exists in this learning setup.",
+    duplicateInline: "A word or phrase with this text already exists.",
+    addDuplicate: "Add anyway",
+    targetRequired: "Enter the word or phrase to learn.",
+    translationsRequired: "Enter at least one accepted translation."
   },
   decks: {
     title: "Decks and subsets",
@@ -226,7 +238,12 @@ const de = {
     translations: "Übersetzungen",
     notes: "Notizen",
     optional: "Optional",
-    today: "Heute"
+    today: "Heute",
+    previous: "Zurück",
+    next: "Weiter",
+    confirm: "Bestätigen",
+    confirmDeleteTitle: "Löschen bestätigen",
+    confirmDelete: "Dieses Element löschen? Dies kann nicht rückgängig gemacht werden."
   },
   profile: {
     label: "Profil",
@@ -274,8 +291,15 @@ const de = {
     reviewStatus: "Wiederholungsstatus",
     languagePair: "Sprachpaar",
     noWords: "Füge dein erstes Wort oder deine erste Phrase hinzu.",
+    page: "Seite {{page}} von {{pages}}",
     exportJson: "JSON exportieren",
-    exportCsv: "CSV exportieren"
+    exportCsv: "CSV exportieren",
+    duplicateTitle: "Doppeltes Wort",
+    duplicateBody: "\"{{word}}\" existiert bereits in dieser Lernkonfiguration.",
+    duplicateInline: "Ein Wort oder eine Phrase mit diesem Text existiert bereits.",
+    addDuplicate: "Trotzdem hinzufügen",
+    targetRequired: "Gib das Wort oder die Phrase zum Lernen ein.",
+    translationsRequired: "Gib mindestens eine akzeptierte Übersetzung ein."
   },
   decks: {
     title: "Stapel und Auswahlen",
@@ -413,7 +437,12 @@ const fr = {
     translations: "Traductions",
     notes: "Notes",
     optional: "Facultatif",
-    today: "Aujourd'hui"
+    today: "Aujourd'hui",
+    previous: "Précédent",
+    next: "Suivant",
+    confirm: "Confirmer",
+    confirmDeleteTitle: "Confirmer la suppression",
+    confirmDelete: "Supprimer cet élément ? Cette action est irréversible."
   },
   profile: {
     label: "Profil",
@@ -461,8 +490,15 @@ const fr = {
     reviewStatus: "Statut de révision",
     languagePair: "Paire de langues",
     noWords: "Ajoutez votre premier mot ou votre première expression.",
+    page: "Page {{page}} sur {{pages}}",
     exportJson: "Exporter JSON",
-    exportCsv: "Exporter CSV"
+    exportCsv: "Exporter CSV",
+    duplicateTitle: "Mot en double",
+    duplicateBody: "\"{{word}}\" existe déjà dans cette configuration.",
+    duplicateInline: "Un mot ou une expression avec ce texte existe déjà.",
+    addDuplicate: "Ajouter quand même",
+    targetRequired: "Saisissez le mot ou l'expression à apprendre.",
+    translationsRequired: "Saisissez au moins une traduction acceptée."
   },
   decks: {
     title: "Paquets et sélections",
@@ -600,7 +636,12 @@ const it = {
     translations: "Traduzioni",
     notes: "Note",
     optional: "Facoltativo",
-    today: "Oggi"
+    today: "Oggi",
+    previous: "Precedente",
+    next: "Avanti",
+    confirm: "Conferma",
+    confirmDeleteTitle: "Conferma eliminazione",
+    confirmDelete: "Eliminare questo elemento? L'azione non può essere annullata."
   },
   profile: {
     label: "Profilo",
@@ -648,8 +689,15 @@ const it = {
     reviewStatus: "Stato ripasso",
     languagePair: "Coppia di lingue",
     noWords: "Aggiungi la tua prima parola o frase.",
+    page: "Pagina {{page}} di {{pages}}",
     exportJson: "Esporta JSON",
-    exportCsv: "Esporta CSV"
+    exportCsv: "Esporta CSV",
+    duplicateTitle: "Parola duplicata",
+    duplicateBody: "\"{{word}}\" esiste già in questo setup.",
+    duplicateInline: "Esiste già una parola o frase con questo testo.",
+    addDuplicate: "Aggiungi comunque",
+    targetRequired: "Inserisci la parola o frase da imparare.",
+    translationsRequired: "Inserisci almeno una traduzione accettata."
   },
   decks: {
     title: "Mazzi e selezioni",
@@ -787,7 +835,12 @@ const es = {
     translations: "Traducciones",
     notes: "Notas",
     optional: "Opcional",
-    today: "Hoy"
+    today: "Hoy",
+    previous: "Anterior",
+    next: "Siguiente",
+    confirm: "Confirmar",
+    confirmDeleteTitle: "Confirmar eliminación",
+    confirmDelete: "¿Eliminar este elemento? Esta acción no se puede deshacer."
   },
   profile: {
     label: "Perfil",
@@ -835,8 +888,15 @@ const es = {
     reviewStatus: "Estado de repaso",
     languagePair: "Par de idiomas",
     noWords: "Añade tu primera palabra o frase.",
+    page: "Página {{page}} de {{pages}}",
     exportJson: "Exportar JSON",
-    exportCsv: "Exportar CSV"
+    exportCsv: "Exportar CSV",
+    duplicateTitle: "Palabra duplicada",
+    duplicateBody: "\"{{word}}\" ya existe en esta configuración.",
+    duplicateInline: "Ya existe una palabra o frase con este texto.",
+    addDuplicate: "Añadir igualmente",
+    targetRequired: "Introduce la palabra o frase para aprender.",
+    translationsRequired: "Introduce al menos una traducción aceptada."
   },
   decks: {
     title: "Mazos y selecciones",
@@ -974,7 +1034,12 @@ const pt = {
     translations: "Traduções",
     notes: "Notas",
     optional: "Opcional",
-    today: "Hoje"
+    today: "Hoje",
+    previous: "Anterior",
+    next: "Seguinte",
+    confirm: "Confirmar",
+    confirmDeleteTitle: "Confirmar eliminação",
+    confirmDelete: "Eliminar este item? Esta ação não pode ser anulada."
   },
   profile: {
     label: "Perfil",
@@ -1022,8 +1087,15 @@ const pt = {
     reviewStatus: "Estado de revisão",
     languagePair: "Par de idiomas",
     noWords: "Adicione a sua primeira palavra ou frase.",
+    page: "Página {{page}} de {{pages}}",
     exportJson: "Exportar JSON",
-    exportCsv: "Exportar CSV"
+    exportCsv: "Exportar CSV",
+    duplicateTitle: "Palavra duplicada",
+    duplicateBody: "\"{{word}}\" já existe nesta configuração.",
+    duplicateInline: "Já existe uma palavra ou frase com este texto.",
+    addDuplicate: "Adicionar mesmo assim",
+    targetRequired: "Introduza a palavra ou frase para aprender.",
+    translationsRequired: "Introduza pelo menos uma tradução aceite."
   },
   decks: {
     title: "Baralhos e seleções",
@@ -1161,7 +1233,12 @@ const ru = {
     translations: "Переводы",
     notes: "Заметки",
     optional: "Необязательно",
-    today: "Сегодня"
+    today: "Сегодня",
+    previous: "Назад",
+    next: "Далее",
+    confirm: "Подтвердить",
+    confirmDeleteTitle: "Подтвердите удаление",
+    confirmDelete: "Удалить этот элемент? Это действие нельзя отменить."
   },
   profile: {
     label: "Профиль",
@@ -1209,8 +1286,15 @@ const ru = {
     reviewStatus: "Статус повторения",
     languagePair: "Языковая пара",
     noWords: "Добавьте первое слово или фразу.",
+    page: "Страница {{page}} из {{pages}}",
     exportJson: "Экспорт JSON",
-    exportCsv: "Экспорт CSV"
+    exportCsv: "Экспорт CSV",
+    duplicateTitle: "Дубликат слова",
+    duplicateBody: "\"{{word}}\" уже есть в этой настройке.",
+    duplicateInline: "Слово или фраза с таким текстом уже существует.",
+    addDuplicate: "Все равно добавить",
+    targetRequired: "Введите слово или фразу для изучения.",
+    translationsRequired: "Введите хотя бы один допустимый перевод."
   },
   decks: {
     title: "Колоды и наборы",
