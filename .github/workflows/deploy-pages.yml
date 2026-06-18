@@ -31,6 +31,8 @@ jobs:
         run: npm ci
 
       - name: Build GitHub Pages bundle
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build:github
 
       - name: Disable Jekyll processing

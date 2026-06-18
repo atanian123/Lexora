@@ -57,6 +57,7 @@ import {
 } from "./lib/db";
 import {
   createBackupExport,
+  type LexoraBackup,
   createCsvExport,
   downloadTextFile,
   parseLexoraBackup,
@@ -68,6 +69,7 @@ import { scheduleReview } from "./lib/srs";
 import { fetchTranslationSuggestions, getTodayTranslationUsage } from "./lib/translation";
 import { ConfirmationProvider, useConfirm } from "./components/confirmation";
 import { FlagIcon, HeaderSelect, Label, Metric, NavButton, ViewTitle } from "./components/ui";
+import { type CloudBackupFile, createGoogleDriveBackupProvider } from "./lib/cloudBackup";
 
 type ViewKey = "study" | "library" | "decks" | "settings";
 type ThemeMode = "light" | "dark";
@@ -108,6 +110,10 @@ const emptyWordForm: WordFormState = {
 };
 
 const themeStorageKey = "lexora.theme";
+const cloudFolderStorageKey = "lexora.cloud.folderPath";
+const cloudAutoBackupStorageKey = "lexora.cloud.autoBackup";
+const defaultCloudBackupFolder = "Lexora/Backups";
+const latestCloudBackupFilename = "lexora-backup-latest.json";
 
 function readStoredTheme(): ThemeMode {
   const stored = localStorage.getItem(themeStorageKey);
@@ -132,10 +138,27 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [theme, setThemeState] = useState<ThemeMode>(readStoredTheme);
+  const autoBackupInitializedRef = useRef(false);
+  const autoBackupTimerRef = useRef<number | null>(null);
+  const googleDriveProvider = useMemo(
+    () => createGoogleDriveBackupProvider(import.meta.env.VITE_GOOGLE_CLIENT_ID),
+    []
+  );
 
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? null;
   const activeSetup =
     learningSetups.find((setup) => setup.id === activeProfile?.activeLearningSetupId) ?? learningSetups[0] ?? null;
+  const autoBackupSignature = useMemo(
+    () => [
+      collectionSignature(profiles),
+      collectionSignature(learningSetups),
+      collectionSignature(decks),
+      collectionSignature(words),
+      collectionSignature(subsets),
+      collectionSignature(cards)
+    ].join("|"),
+    [cards, decks, learningSetups, profiles, subsets, words]
+  );
 
   useEffect(() => {
     void refreshAll();
@@ -190,6 +213,48 @@ export default function App() {
       void i18n.changeLanguage(activeProfile.uiLanguage);
     }
   }, [activeProfile, i18n]);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    if (!autoBackupInitializedRef.current) {
+      autoBackupInitializedRef.current = true;
+      return;
+    }
+
+    if (
+      localStorage.getItem(cloudAutoBackupStorageKey) !== "true" ||
+      !isOnline ||
+      !googleDriveProvider.isConnected()
+    ) {
+      return;
+    }
+
+    if (autoBackupTimerRef.current) {
+      window.clearTimeout(autoBackupTimerRef.current);
+    }
+
+    autoBackupTimerRef.current = window.setTimeout(() => {
+      autoBackupTimerRef.current = null;
+      void createCurrentBackupExport()
+        .then((contents) => googleDriveProvider.uploadBackup(
+          localStorage.getItem(cloudFolderStorageKey) ?? defaultCloudBackupFolder,
+          latestCloudBackupFilename,
+          contents
+        ))
+        .then(() => setStatus(t("cloud.autoBackupSaved")))
+        .catch(() => setStatus(t("cloud.autoBackupSkipped")));
+    }, 2500);
+
+    return () => {
+      if (autoBackupTimerRef.current) {
+        window.clearTimeout(autoBackupTimerRef.current);
+        autoBackupTimerRef.current = null;
+      }
+    };
+  }, [autoBackupSignature, googleDriveProvider, isOnline, loading, t]);
 
   async function refreshAll(nextActiveId = activeProfileId, showLoading = loading) {
     if (showLoading) {
@@ -562,6 +627,8 @@ export default function App() {
             decks={decks}
             words={words}
             usage={usage}
+            cloudProvider={googleDriveProvider}
+            online={isOnline}
             onRefresh={refreshAll}
             onStatus={setStatus}
           />
@@ -1850,6 +1917,8 @@ function SettingsView({
   decks,
   words,
   usage,
+  cloudProvider,
+  online,
   onRefresh,
   onStatus
 }: {
@@ -1860,6 +1929,8 @@ function SettingsView({
   decks: Deck[];
   words: WordEntry[];
   usage: TranslationUsage | null;
+  cloudProvider: ReturnType<typeof createGoogleDriveBackupProvider>;
+  online: boolean;
   onRefresh: () => Promise<void>;
   onStatus: (message: string) => void;
 }) {
@@ -1876,6 +1947,14 @@ function SettingsView({
   const [editingSetupLanguagesId, setEditingSetupLanguagesId] = useState<string | null>(null);
   const [editingBaseLanguage, setEditingBaseLanguage] = useState<LanguageCode>(activeSetup?.baseLanguage ?? "de");
   const [editingTargetLanguage, setEditingTargetLanguage] = useState<LanguageCode>(activeSetup?.targetLanguage ?? "es");
+  const [cloudFolderPath, setCloudFolderPath] = useState(() =>
+    localStorage.getItem(cloudFolderStorageKey) ?? defaultCloudBackupFolder
+  );
+  const [cloudAutoBackup, setCloudAutoBackup] = useState(() => localStorage.getItem(cloudAutoBackupStorageKey) === "true");
+  const [cloudConnected, setCloudConnected] = useState(() => cloudProvider.isConnected());
+  const [cloudBackups, setCloudBackups] = useState<CloudBackupFile[]>([]);
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [lastCloudBackupAt, setLastCloudBackupAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeSetup) {
@@ -1902,6 +1981,14 @@ function SettingsView({
       cancelled = true;
     };
   }, [learningSetups]);
+
+  useEffect(() => {
+    localStorage.setItem(cloudFolderStorageKey, cloudFolderPath);
+  }, [cloudFolderPath]);
+
+  useEffect(() => {
+    localStorage.setItem(cloudAutoBackupStorageKey, cloudAutoBackup ? "true" : "false");
+  }, [cloudAutoBackup]);
 
   async function createAdditionalProfile(event: FormEvent) {
     event.preventDefault();
@@ -1997,21 +2084,37 @@ function SettingsView({
   }
 
   async function exportBackup() {
-    const [allProfiles, allSetups, allDecks, allWords, allSubsets, allCards, allUsage] = await Promise.all([
-      db.profiles.toArray(),
-      db.learningSetups.toArray(),
-      db.decks.toArray(),
-      db.words.toArray(),
-      db.subsets.toArray(),
-      db.cards.toArray(),
-      db.translationUsage.toArray()
-    ]);
+    downloadTextFile("lexora-backup.json", await createCurrentBackupExport(), "application/json");
+  }
 
-    downloadTextFile(
-      "lexora-backup.json",
-      createBackupExport(allProfiles, allSetups, allDecks, allWords, allSubsets, allCards, allUsage),
-      "application/json"
-    );
+  async function confirmReplaceBackup(mode: "merge" | "replace"): Promise<boolean> {
+    if (mode !== "replace") {
+      return true;
+    }
+
+    return confirm({
+      title: t("settings.importBackupReplace"),
+      message: t("settings.importBackupReplaceWarning"),
+      confirmLabel: t("settings.importBackupReplace"),
+      cancelLabel: t("common.cancel"),
+      variant: "danger"
+    });
+  }
+
+  async function importBackupContents(contents: string, mode: "merge" | "replace") {
+    if (!(await confirmReplaceBackup(mode))) {
+      return;
+    }
+
+    try {
+      const backup = parseLexoraBackup(contents);
+      await applyBackupToLocalDb(backup, mode);
+      localStorage.setItem(activeProfileStorageKey, backup.profiles[0].id);
+      onStatus(t("status.imported", { count: backup.words.length }));
+      await onRefresh();
+    } catch {
+      onStatus(t("status.importFailed"));
+    }
   }
 
   async function importBackup(event: ChangeEvent<HTMLInputElement>, mode: "merge" | "replace") {
@@ -2021,50 +2124,97 @@ function SettingsView({
       return;
     }
 
-    if (mode === "replace") {
-      const confirmed = await confirm({
-        title: t("settings.importBackupReplace"),
-        message: t("settings.importBackupReplaceWarning"),
-        confirmLabel: t("settings.importBackupReplace"),
-        cancelLabel: t("common.cancel"),
-        variant: "danger"
-      });
-      if (!confirmed) {
-        return;
-      }
+    await importBackupContents(await file.text(), mode);
+  }
+
+  async function connectCloud() {
+    if (!online) {
+      onStatus(t("cloud.offline"));
+      return;
     }
 
+    if (!cloudProvider.isConfigured()) {
+      onStatus(t("cloud.notConfigured"));
+      return;
+    }
+
+    setCloudBusy(true);
     try {
-      const backup = parseLexoraBackup(await file.text());
-      await db.transaction("rw", [db.profiles, db.learningSetups, db.decks, db.words, db.subsets, db.cards, db.translationUsage], async () => {
-        if (mode === "replace") {
-          await Promise.all([
-            db.profiles.clear(),
-            db.learningSetups.clear(),
-            db.decks.clear(),
-            db.words.clear(),
-            db.subsets.clear(),
-            db.cards.clear(),
-            db.translationUsage.clear()
-          ]);
-        }
+      await cloudProvider.connect();
+      setCloudConnected(true);
+      onStatus(t("cloud.connected"));
+      await refreshCloudBackups();
+    } catch {
+      onStatus(t("cloud.connectFailed"));
+    } finally {
+      setCloudBusy(false);
+    }
+  }
 
-        await Promise.all([
-          backup.profiles.length ? db.profiles.bulkPut(backup.profiles) : Promise.resolve(),
-          backup.learningSetups.length ? db.learningSetups.bulkPut(backup.learningSetups) : Promise.resolve(),
-          backup.decks.length ? db.decks.bulkPut(backup.decks) : Promise.resolve(),
-          backup.words.length ? db.words.bulkPut(backup.words) : Promise.resolve(),
-          backup.subsets.length ? db.subsets.bulkPut(backup.subsets) : Promise.resolve(),
-          backup.cards.length ? db.cards.bulkPut(backup.cards) : Promise.resolve(),
-          backup.translationUsage.length ? db.translationUsage.bulkPut(backup.translationUsage) : Promise.resolve()
-        ]);
-      });
+  function disconnectCloud() {
+    cloudProvider.disconnect();
+    setCloudConnected(false);
+    setCloudBackups([]);
+    onStatus(t("cloud.disconnected"));
+  }
 
-      localStorage.setItem(activeProfileStorageKey, backup.profiles[0].id);
-      onStatus(t("status.imported", { count: backup.words.length }));
-      await onRefresh();
+  async function refreshCloudBackups() {
+    if (!online) {
+      onStatus(t("cloud.offline"));
+      return;
+    }
+
+    setCloudBusy(true);
+    try {
+      const backups = await cloudProvider.listBackups(cloudFolderPath);
+      setCloudConnected(cloudProvider.isConnected());
+      setCloudBackups(backups);
+    } catch {
+      setCloudConnected(cloudProvider.isConnected());
+      onStatus(t("cloud.listFailed"));
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function backupToCloud() {
+    if (!online) {
+      onStatus(t("cloud.offline"));
+      return;
+    }
+
+    setCloudBusy(true);
+    try {
+      const contents = await createCurrentBackupExport();
+      const snapshotName = `lexora-backup-${formatBackupTimestamp(new Date())}.json`;
+      await cloudProvider.uploadBackup(cloudFolderPath, latestCloudBackupFilename, contents);
+      await cloudProvider.uploadBackup(cloudFolderPath, snapshotName, contents);
+      setCloudConnected(cloudProvider.isConnected());
+      setLastCloudBackupAt(new Date().toISOString());
+      onStatus(t("cloud.backupSaved"));
+      await refreshCloudBackups();
+    } catch {
+      setCloudConnected(cloudProvider.isConnected());
+      onStatus(t("cloud.backupFailed"));
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function importCloudBackup(file: CloudBackupFile, mode: "merge" | "replace") {
+    if (!online) {
+      onStatus(t("cloud.offline"));
+      return;
+    }
+
+    setCloudBusy(true);
+    try {
+      const contents = await cloudProvider.downloadBackup(file.id);
+      await importBackupContents(contents, mode);
     } catch {
       onStatus(t("status.importFailed"));
+    } finally {
+      setCloudBusy(false);
     }
   }
 
@@ -2353,6 +2503,96 @@ function SettingsView({
           <p className="app-subpanel p-2">
             <span className="app-label font-semibold">{t("settings.importCsv")}:</span> {t("settings.importCsvHint")}
           </p>
+        </div>
+      </div>
+
+      <div className="app-panel grid min-w-0 gap-3 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="app-heading text-base font-semibold">{t("cloud.title")}</h2>
+            <p className="app-muted mt-1 text-sm">{t("cloud.body")}</p>
+          </div>
+          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${cloudConnected ? "app-success" : "app-warning"}`}>
+            {cloudConnected ? t("cloud.connected") : t("cloud.notConnected")}
+          </span>
+        </div>
+
+        <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <Label text={t("cloud.folderPath")}>
+            <input
+              className="app-input"
+              value={cloudFolderPath}
+              onChange={(event) => setCloudFolderPath(event.target.value)}
+              placeholder={defaultCloudBackupFolder}
+            />
+          </Label>
+          <div className="flex flex-wrap gap-2">
+            {cloudConnected ? (
+              <button className="app-button app-button-secondary" type="button" onClick={disconnectCloud} disabled={cloudBusy}>
+                {t("cloud.disconnect")}
+              </button>
+            ) : (
+              <button className="app-button app-button-primary" type="button" onClick={() => void connectCloud()} disabled={cloudBusy || !online || !cloudProvider.isConfigured()}>
+                {t("cloud.connectGoogle")}
+              </button>
+            )}
+            <button className="app-button app-button-secondary" type="button" onClick={() => void refreshCloudBackups()} disabled={cloudBusy || !online || !cloudConnected}>
+              <RotateCcw size={18} />
+              {t("cloud.refresh")}
+            </button>
+          </div>
+        </div>
+
+        <label className="app-subpanel flex min-w-0 items-start gap-3 p-3 text-sm">
+          <input
+            className="mt-1"
+            type="checkbox"
+            checked={cloudAutoBackup}
+            onChange={(event) => setCloudAutoBackup(event.target.checked)}
+          />
+          <span>
+            <span className="app-label block font-semibold">{t("cloud.autoBackup")}</span>
+            <span className="app-muted">{t("cloud.autoBackupHint")}</span>
+          </span>
+        </label>
+
+        <div className="settings-actions">
+          <button className="app-button app-button-primary" type="button" onClick={() => void backupToCloud()} disabled={cloudBusy || !online || !cloudProvider.isConfigured()}>
+            <Download size={18} />
+            {t("cloud.backupNow")}
+          </button>
+          {lastCloudBackupAt ? (
+            <div className="app-subpanel flex items-center px-3 py-2 text-sm">
+              {t("cloud.lastBackup", { date: new Date(lastCloudBackupAt).toLocaleString(i18n.language) })}
+            </div>
+          ) : null}
+        </div>
+
+        {!cloudProvider.isConfigured() ? <p className="app-danger-surface rounded-lg border px-3 py-2 text-sm">{t("cloud.notConfigured")}</p> : null}
+        {!online ? <p className="app-danger-surface rounded-lg border px-3 py-2 text-sm">{t("cloud.offline")}</p> : null}
+
+        <div className="app-subpanel overflow-hidden">
+          <div className="app-divider flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+            <span className="app-label text-sm font-semibold">{t("cloud.backups")}</span>
+            <span className="app-subtle text-xs">{cloudBackups.length} {t("common.backups")}</span>
+          </div>
+          {cloudBackups.length === 0 ? <p className="app-muted p-3 text-sm">{t("cloud.noBackups")}</p> : null}
+          {cloudBackups.map((backup) => (
+            <div key={backup.id} className="app-divider grid gap-2 border-t px-3 py-2.5 first:border-t-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+              <div className="min-w-0">
+                <p className="app-heading truncate text-sm font-semibold">{backup.name}</p>
+                <p className="app-subtle text-xs">{new Date(backup.modifiedTime).toLocaleString(i18n.language)}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button className="app-button app-button-secondary app-button-compact" type="button" onClick={() => void importCloudBackup(backup, "merge")} disabled={cloudBusy || !online}>
+                  {t("settings.importBackupMerge")}
+                </button>
+                <button className="app-button app-button-secondary app-button-compact" type="button" onClick={() => void importCloudBackup(backup, "replace")} disabled={cloudBusy || !online}>
+                  {t("settings.importBackupReplace")}
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -3063,6 +3303,54 @@ function splitTranslations(value: string): string[] {
 
 function normalizeDuplicateText(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+async function createCurrentBackupExport(): Promise<string> {
+  const [allProfiles, allSetups, allDecks, allWords, allSubsets, allCards, allUsage] = await Promise.all([
+    db.profiles.toArray(),
+    db.learningSetups.toArray(),
+    db.decks.toArray(),
+    db.words.toArray(),
+    db.subsets.toArray(),
+    db.cards.toArray(),
+    db.translationUsage.toArray()
+  ]);
+
+  return createBackupExport(allProfiles, allSetups, allDecks, allWords, allSubsets, allCards, allUsage);
+}
+
+async function applyBackupToLocalDb(backup: LexoraBackup, mode: "merge" | "replace"): Promise<void> {
+  await db.transaction("rw", [db.profiles, db.learningSetups, db.decks, db.words, db.subsets, db.cards, db.translationUsage], async () => {
+    if (mode === "replace") {
+      await Promise.all([
+        db.profiles.clear(),
+        db.learningSetups.clear(),
+        db.decks.clear(),
+        db.words.clear(),
+        db.subsets.clear(),
+        db.cards.clear(),
+        db.translationUsage.clear()
+      ]);
+    }
+
+    await Promise.all([
+      backup.profiles.length ? db.profiles.bulkPut(backup.profiles) : Promise.resolve(),
+      backup.learningSetups.length ? db.learningSetups.bulkPut(backup.learningSetups) : Promise.resolve(),
+      backup.decks.length ? db.decks.bulkPut(backup.decks) : Promise.resolve(),
+      backup.words.length ? db.words.bulkPut(backup.words) : Promise.resolve(),
+      backup.subsets.length ? db.subsets.bulkPut(backup.subsets) : Promise.resolve(),
+      backup.cards.length ? db.cards.bulkPut(backup.cards) : Promise.resolve(),
+      backup.translationUsage.length ? db.translationUsage.bulkPut(backup.translationUsage) : Promise.resolve()
+    ]);
+  });
+}
+
+function formatBackupTimestamp(date: Date): string {
+  return date.toISOString().replace(/\.\d{3}Z$/, "Z").replace(/[:]/g, "-");
+}
+
+function collectionSignature(items: Array<{ id: string; updatedAt?: string }>): string {
+  return `${items.length}:${items.map((item) => `${item.id}:${item.updatedAt ?? ""}`).sort().join(",")}`;
 }
 
 function groupCardsByWord(cards: CardState[]): Map<string, CardState[]> {

@@ -14,7 +14,7 @@ The app is designed for personal and small-family use in phase 1: all learning d
 - Translation suggestions through MyMemory, with manual entry always available.
 - Typed flashcard practice with answer checking, close-answer handling, and FSRS scheduling.
 - Per-direction review history: target to base and base to target are tracked independently.
-- Full JSON backup and restore, plus CSV word import/export.
+- Full JSON backup and restore, Google Drive cloud backup, plus CSV word import/export.
 - Installable PWA behavior with service-worker caching.
 
 ## Supported Languages
@@ -63,7 +63,7 @@ A card scheduled for review now by the spaced-repetition system.
 5. Organize entries into decks or subsets.
 6. Open Study, choose scope and direction, and start a session.
 7. Type answers, review the result, and continue with Next.
-8. Export a backup when moving devices or protecting local data.
+8. Export a backup or connect Google Drive when moving devices or protecting local data.
 
 ## Library
 
@@ -162,6 +162,58 @@ Accepted header aliases include `target`, `word`, `phrase`, `translation`, `tran
 
 Direct Duolingo account import is not included in phase 1 because there is no stable official browser-friendly Duolingo vocabulary API. If a user obtains a word list from another source, it can be imported through CSV.
 
+## Google Drive Backup
+
+Lexora can store JSON backups in Google Drive while keeping all local import/export options available.
+
+Supported cloud actions:
+
+- Connect one Google Drive account.
+- Store backups in a configurable Drive folder. The default folder is `Lexora/Backups`.
+- Create a current backup named `lexora-backup-latest.json`.
+- Create dated snapshot backups named `lexora-backup-{date}.json`.
+- Import a cloud backup by merging it into local data.
+- Restore a cloud backup by replacing local data after confirmation.
+- Automatically update the latest cloud backup after important local changes while Google Drive is connected.
+
+Google Drive backup is not full multi-device sync. It stores backup files that the user can import or restore.
+
+### Google Cloud Configuration
+
+The app uses Google Identity Services in the browser and requires an OAuth 2.0 Client ID for a web application.
+
+In Google Cloud Console:
+
+1. Enable the **Google Drive API** for the project.
+2. Configure the OAuth consent screen.
+3. Create or open an **OAuth 2.0 Client ID** with application type **Web application**.
+4. Add the local development origins under **Authorized JavaScript origins**:
+
+```text
+http://localhost:5173
+http://127.0.0.1:5173
+```
+
+5. Add the GitHub Pages origin under **Authorized JavaScript origins**:
+
+```text
+https://atanian123.github.io
+```
+
+For GitHub Pages project sites, only the origin is added here. The `/Lexora/` path is not part of the authorized origin.
+
+No redirect URI is required for the Google Identity Services token flow used by Lexora. Seeing `redirect_uri=gis_transform` in Google's request details is expected.
+
+If the OAuth app is in testing mode, add every test Google account under **Test users** on the OAuth consent screen.
+
+Set the client ID locally in `.env.local`:
+
+```env
+VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+```
+
+For GitHub Pages deployment, add the same value as a repository secret named `VITE_GOOGLE_CLIENT_ID`.
+
 ## Offline and Privacy Model
 
 Lexora is local-first.
@@ -171,9 +223,9 @@ Lexora is local-first.
 - Study and library management work offline.
 - Translation suggestions require network access.
 - Translation requests send only the text and language pair to MyMemory.
-- No analytics, tracking scripts, login, or cloud sync are included in phase 1.
+- No analytics, tracking scripts, login, or full cloud sync are included in phase 1.
 
-Because there is no cloud sync yet, users should export backups regularly if the data matters.
+Because Google Drive support is backup-based rather than full sync, users should keep regular backups if the data matters.
 
 ## Translation Provider
 
@@ -209,6 +261,7 @@ src/
   lib/
     constants.ts       Supported languages, ratings, limits
     db.ts              Dexie schema and local data operations
+    cloudBackup.ts     Google Drive backup provider abstraction
     export.ts          Backup, CSV export, and import parsing
     ids.ts             ID and date helpers
     matching.ts        Answer normalization and close-answer matching
@@ -260,7 +313,7 @@ The production build writes to `docs/`. The GitHub Pages build uses `/Lexora/` a
 
 ## Current Limitations
 
-- No cloud sync or login.
+- No full cloud sync or login.
 - No direct Duolingo account integration.
 - No text-to-speech or speech-to-text yet.
 - No public deck sharing.
