@@ -348,13 +348,13 @@ export default function App() {
     <ConfirmationProvider>
     <div className="app-shell">
       <header className="app-header app-glass sticky top-0 z-30 border-b">
-        <div className="mx-auto grid max-w-7xl gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto grid max-w-7xl gap-2 px-3 py-2 sm:gap-3 sm:px-6 sm:py-3">
           <div className="desktop-top-row">
             <div className="flex min-w-0 items-center gap-3">
-              <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-11 w-11 shrink-0 drop-shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
+              <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-9 w-9 shrink-0 drop-shadow-[0_0_8px_rgba(99,102,241,0.6)] sm:h-11 sm:w-11" />
               <div className="min-w-0">
-                <h1 className="app-heading text-xl font-bold tracking-tight">Lexora</h1>
-                <p className="app-muted truncate text-sm">{t("app.tagline")}</p>
+                <h1 className="app-heading text-lg font-bold tracking-tight sm:text-xl">Lexora</h1>
+                <p className="app-muted hidden truncate text-sm sm:block">{t("app.tagline")}</p>
               </div>
             </div>
             <div className="desktop-nav-tabs" aria-label="Primary">
@@ -444,8 +444,8 @@ export default function App() {
       </header>
 
       <nav className="app-nav app-glass border-b sm:hidden" aria-label="Primary">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="flex min-h-14 items-center sm:hidden">
+        <div className="mx-auto max-w-7xl px-3 sm:px-6">
+          <div className="flex min-h-11 items-center sm:hidden">
             <div className="min-w-0">
               <span className="app-heading block text-sm font-semibold">{currentNavLabel(view, t)}</span>
               {activeSetup ? (
@@ -472,7 +472,7 @@ export default function App() {
             onClick={() => setMobileMenuOpen(false)}
           />
           <aside
-            className="app-mobile-drawer app-glass absolute inset-y-0 right-0 flex w-[min(22rem,calc(100vw-1rem))] max-w-full flex-col overflow-y-auto p-4 shadow-2xl"
+            className="app-mobile-drawer app-glass absolute inset-y-0 right-0 flex w-[min(22rem,calc(100vw-0.5rem))] max-w-full flex-col overflow-y-auto p-3 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-label={t("nav.menu")}
@@ -582,59 +582,61 @@ export default function App() {
         </div>
       ) : null}
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        {!activeSetup && view !== "settings" ? (
-          <SetupRequired profile={activeProfile} onCreated={() => refreshAll(activeProfile.id)} />
-        ) : null}
-        {view === "study" && activeSetup ? (
-          <StudyView
-            profile={activeProfile}
-            setup={activeSetup}
-            decks={decks}
-            words={words}
-            subsets={subsets}
-            cards={cards}
-            onRefresh={refreshAll}
-          />
-        ) : null}
-        {view === "library" && activeSetup ? (
-          <LibraryView
-            profile={activeProfile}
-            setup={activeSetup}
-            decks={decks}
-            words={words}
-            cards={cards}
-            usage={usage}
-            onRefresh={refreshAll}
-            onStatus={setStatus}
-          />
-        ) : null}
-        {view === "decks" && activeSetup ? (
-          <DecksView
-            profile={activeProfile}
-            setup={activeSetup}
-            decks={decks}
-            words={words}
-            subsets={subsets}
-            onRefresh={refreshAll}
-            onStatus={setStatus}
-          />
-        ) : null}
-        {view === "settings" ? (
-          <SettingsView
-            profile={activeProfile}
-            profiles={profiles}
-            learningSetups={learningSetups}
-            activeSetup={activeSetup}
-            decks={decks}
-            words={words}
-            usage={usage}
-            cloudProvider={googleDriveProvider}
-            online={isOnline}
-            onRefresh={refreshAll}
-            onStatus={setStatus}
-          />
-        ) : null}
+      <main className="mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-6">
+        <div key={`${view}-${activeSetup?.id ?? "none"}`} className="app-view-transition">
+          {!activeSetup && view !== "settings" ? (
+            <SetupRequired profile={activeProfile} onCreated={() => refreshAll(activeProfile.id)} />
+          ) : null}
+          {view === "study" && activeSetup ? (
+            <StudyView
+              profile={activeProfile}
+              setup={activeSetup}
+              decks={decks}
+              words={words}
+              subsets={subsets}
+              cards={cards}
+              onRefresh={refreshAll}
+            />
+          ) : null}
+          {view === "library" && activeSetup ? (
+            <LibraryView
+              profile={activeProfile}
+              setup={activeSetup}
+              decks={decks}
+              words={words}
+              cards={cards}
+              usage={usage}
+              onRefresh={refreshAll}
+              onStatus={setStatus}
+            />
+          ) : null}
+          {view === "decks" && activeSetup ? (
+            <DecksView
+              profile={activeProfile}
+              setup={activeSetup}
+              decks={decks}
+              words={words}
+              subsets={subsets}
+              onRefresh={refreshAll}
+              onStatus={setStatus}
+            />
+          ) : null}
+          {view === "settings" ? (
+            <SettingsView
+              profile={activeProfile}
+              profiles={profiles}
+              learningSetups={learningSetups}
+              activeSetup={activeSetup}
+              decks={decks}
+              words={words}
+              usage={usage}
+              cloudProvider={googleDriveProvider}
+              online={isOnline}
+              onRefresh={refreshAll}
+              onStatus={setStatus}
+            />
+          ) : null}
+        </div>
       </main>
     </div>
     </ConfirmationProvider>
@@ -2888,7 +2890,7 @@ function LanguageSelect({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        data-tooltip={selectedLabel}
+        data-tooltip={open ? "" : selectedLabel}
         onClick={() => setOpen((current) => !current)}
         onKeyDown={handleKeyDown}
       >
@@ -2994,7 +2996,7 @@ function CompactLanguageSelect({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        data-tooltip={languageOptionLabel(value, i18n.language)}
+        data-tooltip={open ? "" : languageOptionLabel(value, i18n.language)}
         onClick={() => setOpen((current) => !current)}
         onKeyDown={handleKeyDown}
       >
@@ -3166,7 +3168,7 @@ function LearningSetupSelect({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        data-tooltip={selected ? `${learningSetupDisplayName(selected, locale)} · ${setupBaseContext(selected.baseLanguage, locale, t("setup.baseShort"))}` : label}
+        data-tooltip={open || !selected ? "" : `${learningSetupDisplayName(selected, locale)} · ${setupBaseContext(selected.baseLanguage, locale, t("setup.baseShort"))}`}
         onClick={() => setOpen((current) => !current)}
         onKeyDown={handleKeyDown}
       >

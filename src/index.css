@@ -122,6 +122,11 @@
 :root {
   color: var(--text-body);
   background: var(--bg-base);
+  --motion-fast: 140ms;
+  --motion-medium: 220ms;
+  --motion-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   font-family:
     ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -142,6 +147,57 @@ body {
   min-height: 100dvh;
   margin: 0;
   background: var(--bg-base);
+}
+
+@keyframes view-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.45rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.35rem) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(1rem);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
 }
 
 button,
@@ -178,6 +234,7 @@ textarea:focus-visible {
 .app-nav {
   border-color: var(--border-subtle);
   background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  transition: background-color var(--motion-medium) var(--ease-standard), border-color var(--motion-medium) var(--ease-standard);
 }
 
 .app-mobile-menu {
@@ -188,11 +245,14 @@ textarea:focus-visible {
 
 .app-backdrop {
   background: rgba(2, 6, 23, 0.58);
+  animation: fade-in var(--motion-medium) var(--ease-standard);
 }
 
 .app-mobile-drawer {
   border-left: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
+  animation: drawer-in var(--motion-slow) var(--ease-emphasized);
+  will-change: transform;
 }
 
 .mobile-menu-trigger {
@@ -385,7 +445,10 @@ textarea:focus-visible {
   background: var(--input-bg);
   padding: 0.5rem 0.75rem;
   color: var(--input-text);
-  transition: border-color 150ms ease, background-color 150ms ease;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .app-input:focus {
@@ -429,13 +492,18 @@ textarea:focus-visible {
   background: var(--btn-sec-bg);
   padding: 0.32rem 0.5rem;
   color: var(--btn-sec-text);
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
 }
 
 .app-icon-select:hover {
   border-color: var(--btn-sec-hover-border);
   background: var(--btn-sec-hover-bg);
   color: var(--btn-sec-hover-text);
+  transform: translateY(-1px);
 }
 
 .app-input-compact {
@@ -463,13 +531,18 @@ textarea:focus-visible {
   background: var(--btn-sec-bg);
   padding: 0.32rem 0.5rem;
   color: var(--btn-sec-text);
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
 }
 
 .app-icon-select:hover {
   border-color: var(--btn-sec-hover-border);
   background: var(--btn-sec-hover-bg);
   color: var(--btn-sec-hover-text);
+  transform: translateY(-1px);
 }
 
 select.app-input {
@@ -488,6 +561,11 @@ select.app-input {
   border-radius: 16px;
   background: var(--panel-bg);
   box-shadow: var(--panel-shadow);
+  transition:
+    border-color var(--motion-medium) var(--ease-standard),
+    background-color var(--motion-medium) var(--ease-standard),
+    box-shadow var(--motion-medium) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
 }
 
 .app-subpanel {
@@ -495,6 +573,19 @@ select.app-input {
   border: 1px solid var(--subpanel-border);
   border-radius: 10px;
   background: var(--subpanel-bg);
+  transition:
+    border-color var(--motion-medium) var(--ease-standard),
+    background-color var(--motion-medium) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.app-view-transition {
+  animation: view-in var(--motion-medium) var(--ease-emphasized);
+}
+
+.app-view-transition .app-panel,
+.app-view-transition .app-subpanel {
+  animation: surface-in var(--motion-medium) var(--ease-emphasized);
 }
 
 .app-glass {
@@ -624,16 +715,21 @@ select.app-input {
   white-space: nowrap;
   cursor: pointer;
   transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease,
-    transform 120ms ease,
-    box-shadow 140ms ease,
-    opacity 140ms ease;
+    background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
+  will-change: transform;
+}
+
+.app-button:hover:not(:disabled) {
+  transform: translateY(-1px);
 }
 
 .app-button:active {
-  transform: translateY(1px);
+  transform: translateY(0);
 }
 
 .app-button:disabled {
@@ -733,13 +829,18 @@ select.app-input {
   color: var(--btn-sec-text);
   font-size: 0.9rem;
   font-weight: 700;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
 }
 
 .theme-toggle:hover {
   border-color: var(--btn-sec-hover-border);
   background: var(--btn-sec-hover-bg);
   color: var(--btn-sec-hover-text);
+  transform: translateY(-1px);
 }
 
 .theme-toggle-track {
@@ -765,6 +866,12 @@ select.app-input {
   border-radius: 999px;
   background: var(--accent);
   color: #ffffff;
+  transition: transform var(--motion-medium) var(--ease-emphasized), background-color var(--motion-medium) var(--ease-standard);
+}
+
+.app-panel[role="listbox"] {
+  animation: surface-in var(--motion-fast) var(--ease-emphasized);
+  transform-origin: top;
 }
 
 .theme-toggle-label {
@@ -1045,6 +1152,39 @@ select.app-input {
 @media (min-width: 1024px) {
   .settings-actions {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 639px) {
+  .app-view-transition > section.grid {
+    gap: 0.75rem;
+  }
+
+  .app-view-transition .app-panel[class~="p-4"] {
+    padding: 0.75rem;
+  }
+
+  .app-view-transition .app-subpanel[class~="p-3"] {
+    padding: 0.625rem;
+  }
+
+  .app-view-transition h2.text-2xl {
+    font-size: 1.25rem;
+    line-height: 1.65rem;
+  }
+
+  .app-view-transition .app-panel {
+    border-radius: 12px;
+  }
+
+  .app-view-transition .app-input {
+    min-height: 2.35rem;
+  }
+
+  .due-status {
+    min-height: 2.15rem;
+    min-width: 4.75rem;
+    padding: 0.35rem 0.55rem;
   }
 }
 
