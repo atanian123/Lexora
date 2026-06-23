@@ -327,7 +327,10 @@ export default function App() {
   if (loading) {
     return (
       <main className="app-screen flex min-h-dvh items-center justify-center px-4">
-        <div className="app-chip">Lexora</div>
+        <div className="app-chip gap-3 px-4 py-2">
+          <span>Lexora</span>
+          <LoadingIndicator label="Loading Lexora" />
+        </div>
       </main>
     );
   }
@@ -1499,7 +1502,7 @@ function LibraryView({
             data-tooltip={t("library.fetchSuggestions")}
             data-tooltip-placement="top"
           >
-            <Search size={18} />
+            {fetching ? <LoadingIndicator label={t("library.fetchSuggestions")} /> : <Search size={18} />}
             {t("library.fetchSuggestions")}
           </button>
         </div>
@@ -1993,6 +1996,7 @@ function SettingsView({
   const [editingSetupLanguagesId, setEditingSetupLanguagesId] = useState<string | null>(null);
   const [editingBaseLanguage, setEditingBaseLanguage] = useState<LanguageCode>(activeSetup?.baseLanguage ?? "de");
   const [editingTargetLanguage, setEditingTargetLanguage] = useState<LanguageCode>(activeSetup?.targetLanguage ?? "es");
+  const [localBusy, setLocalBusy] = useState<"exportBackup" | "importBackupMerge" | "importBackupReplace" | "importCsv" | null>(null);
   const [cloudFolderPath, setCloudFolderPath] = useState(() =>
     localStorage.getItem(cloudFolderStorageKey) ?? defaultCloudBackupFolder
   );
@@ -2003,6 +2007,7 @@ function SettingsView({
   const [cloudBackups, setCloudBackups] = useState<CloudBackupFile[]>([]);
   const [cloudBusy, setCloudBusy] = useState(false);
   const [lastCloudBackupAt, setLastCloudBackupAt] = useState<string | null>(null);
+  const settingsBusy = Boolean(localBusy || cloudBusy);
 
   useEffect(() => {
     if (activeSetup) {
@@ -2132,7 +2137,12 @@ function SettingsView({
   }
 
   async function exportBackup() {
-    downloadTextFile("lexora-backup.json", await createCurrentBackupExport(), "application/json");
+    setLocalBusy("exportBackup");
+    try {
+      downloadTextFile("lexora-backup.json", await createCurrentBackupExport(), "application/json");
+    } finally {
+      setLocalBusy(null);
+    }
   }
 
   async function confirmReplaceBackup(mode: "merge" | "replace"): Promise<boolean> {
@@ -2172,7 +2182,12 @@ function SettingsView({
       return;
     }
 
-    await importBackupContents(await file.text(), mode);
+    setLocalBusy(mode === "merge" ? "importBackupMerge" : "importBackupReplace");
+    try {
+      await importBackupContents(await file.text(), mode);
+    } finally {
+      setLocalBusy(null);
+    }
   }
 
   async function connectCloud() {
@@ -2320,6 +2335,7 @@ function SettingsView({
       return;
     }
 
+    setLocalBusy("importCsv");
     try {
       const importedRows = parseWordCsv(await file.text());
       const timestamp = nowIso();
@@ -2393,6 +2409,8 @@ function SettingsView({
       await onRefresh();
     } catch {
       onStatus(t("status.importFailed"));
+    } finally {
+      setLocalBusy(null);
     }
   }
 
@@ -2559,20 +2577,20 @@ function SettingsView({
           onChange={(event) => void importCsvWords(event)}
         />
         <div className="settings-actions">
-          <button className="app-button app-button-secondary" onClick={() => void exportBackup()} data-tooltip={t("settings.exportBackup")}>
-            <Download size={18} />
+          <button className="app-button app-button-secondary" onClick={() => void exportBackup()} disabled={settingsBusy} data-tooltip={t("settings.exportBackup")}>
+            {localBusy === "exportBackup" ? <LoadingIndicator label={t("settings.exportBackup")} /> : <Download size={18} />}
             {t("settings.exportBackup")}
           </button>
-          <button className="app-button app-button-secondary" onClick={() => backupMergeInputRef.current?.click()} data-tooltip={t("settings.importBackupMergeHint")}>
-            <Plus size={18} />
+          <button className="app-button app-button-secondary" onClick={() => backupMergeInputRef.current?.click()} disabled={settingsBusy} data-tooltip={t("settings.importBackupMergeHint")}>
+            {localBusy === "importBackupMerge" ? <LoadingIndicator label={t("settings.importBackupMerge")} /> : <Plus size={18} />}
             {t("settings.importBackupMerge")}
           </button>
-          <button className="app-button app-button-secondary" onClick={() => backupReplaceInputRef.current?.click()} data-tooltip={t("settings.importBackupReplaceHint")}>
-            <RotateCcw size={18} />
+          <button className="app-button app-button-secondary" onClick={() => backupReplaceInputRef.current?.click()} disabled={settingsBusy} data-tooltip={t("settings.importBackupReplaceHint")}>
+            {localBusy === "importBackupReplace" ? <LoadingIndicator label={t("settings.importBackupReplace")} /> : <RotateCcw size={18} />}
             {t("settings.importBackupReplace")}
           </button>
-          <button className="app-button app-button-secondary" onClick={() => csvImportInputRef.current?.click()} disabled={!activeSetup} data-tooltip={t("settings.importCsvHint")}>
-            <Plus size={18} />
+          <button className="app-button app-button-secondary" onClick={() => csvImportInputRef.current?.click()} disabled={!activeSetup || settingsBusy} data-tooltip={t("settings.importCsvHint")}>
+            {localBusy === "importCsv" ? <LoadingIndicator label={t("settings.importCsv")} /> : <Plus size={18} />}
             {t("settings.importCsv")}
           </button>
           <button
@@ -2628,11 +2646,12 @@ function SettingsView({
               </button>
             ) : (
               <button className="app-button app-button-primary" type="button" onClick={() => void connectCloud()} disabled={cloudBusy || !online || !cloudProvider.isConfigured()}>
+                {cloudBusy ? <LoadingIndicator label={t("cloud.connectGoogle")} /> : null}
                 {t("cloud.connectGoogle")}
               </button>
             )}
             <button className="app-button app-button-secondary" type="button" onClick={() => void refreshCloudBackups()} disabled={cloudBusy || !online || !cloudConnected}>
-              <RotateCcw size={18} />
+              {cloudBusy ? <LoadingIndicator label={t("cloud.refresh")} /> : <RotateCcw size={18} />}
               {t("cloud.refresh")}
             </button>
           </div>
@@ -2653,7 +2672,7 @@ function SettingsView({
 
         <div className="settings-actions">
           <button className="app-button app-button-primary" type="button" onClick={() => void backupToCloud()} disabled={cloudBusy || !online || !cloudProvider.isConfigured()}>
-            <Download size={18} />
+            {cloudBusy ? <LoadingIndicator label={t("cloud.backupNow")} /> : <Download size={18} />}
             {t("cloud.backupNow")}
           </button>
           {lastCloudBackupAt ? (
@@ -2669,7 +2688,10 @@ function SettingsView({
         <div className="app-subpanel overflow-hidden">
           <div className="app-divider flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
             <span className="app-label text-sm font-semibold">{t("cloud.backups")}</span>
-            <span className="app-subtle text-xs">{cloudBackups.length} {t("common.backups")}</span>
+            <span className="app-subtle inline-flex items-center gap-2 text-xs">
+              {cloudBusy ? <LoadingIndicator label="Loading cloud backups" /> : null}
+              {cloudBackups.length} {t("common.backups")}
+            </span>
           </div>
           {cloudBackups.length === 0 ? <p className="app-muted p-3 text-sm">{t("cloud.noBackups")}</p> : null}
           {cloudBackups.map((backup) => (
@@ -2708,6 +2730,16 @@ function SettingsView({
         </p>
       </div>
     </section>
+  );
+}
+
+function LoadingIndicator({ label }: { label: string }) {
+  return (
+    <span className="loading-indicator" role="status" aria-label={label}>
+      <span />
+      <span />
+      <span />
+    </span>
   );
 }
 
