@@ -219,6 +219,8 @@ const en = {
     backups: "Cloud backups",
     noBackups: "No cloud backups found in this folder.",
     refresh: "Refresh",
+    deleteBackup: "Delete backup",
+    deleteFailed: "Could not delete cloud backup.",
     listFailed: "Could not load cloud backups.",
     lastBackup: "Last backup: {{date}}"
   },
@@ -457,6 +459,8 @@ const bg = {
     backups: "Облачни архиви",
     noBackups: "В тази папка няма намерени облачни архиви.",
     refresh: "Обнови",
+    deleteBackup: "Изтрий архив",
+    deleteFailed: "Облачният архив не можа да бъде изтрит.",
     listFailed: "Облачните архиви не можаха да бъдат заредени.",
     lastBackup: "Последен архив: {{date}}"
   },
@@ -684,6 +688,8 @@ const de = {
     backups: "Cloud-Backups",
     noBackups: "Keine Cloud-Backups in diesem Ordner gefunden.",
     refresh: "Aktualisieren",
+    deleteBackup: "Backup löschen",
+    deleteFailed: "Cloud-Backup konnte nicht gelöscht werden.",
     listFailed: "Cloud-Backups konnten nicht geladen werden.",
     lastBackup: "Letztes Backup: {{date}}"
   },
@@ -911,6 +917,8 @@ const fr = {
     backups: "Sauvegardes cloud",
     noBackups: "Aucune sauvegarde cloud trouvée dans ce dossier.",
     refresh: "Actualiser",
+    deleteBackup: "Supprimer la sauvegarde",
+    deleteFailed: "Impossible de supprimer la sauvegarde cloud.",
     listFailed: "Impossible de charger les sauvegardes cloud.",
     lastBackup: "Dernière sauvegarde : {{date}}"
   },
@@ -1138,6 +1146,8 @@ const it = {
     backups: "Backup cloud",
     noBackups: "Nessun backup cloud trovato in questa cartella.",
     refresh: "Aggiorna",
+    deleteBackup: "Elimina backup",
+    deleteFailed: "Impossibile eliminare il backup cloud.",
     listFailed: "Impossibile caricare i backup cloud.",
     lastBackup: "Ultimo backup: {{date}}"
   },
@@ -1365,6 +1375,8 @@ const es = {
     backups: "Copias en la nube",
     noBackups: "No se encontraron copias en esta carpeta.",
     refresh: "Actualizar",
+    deleteBackup: "Eliminar copia",
+    deleteFailed: "No se pudo eliminar la copia en la nube.",
     listFailed: "No se pudieron cargar las copias en la nube.",
     lastBackup: "Última copia: {{date}}"
   },
@@ -1592,6 +1604,8 @@ const pt = {
     backups: "Cópias na cloud",
     noBackups: "Nenhuma cópia encontrada nesta pasta.",
     refresh: "Atualizar",
+    deleteBackup: "Eliminar cópia",
+    deleteFailed: "Não foi possível eliminar a cópia na cloud.",
     listFailed: "Não foi possível carregar as cópias na cloud.",
     lastBackup: "Última cópia: {{date}}"
   },
@@ -1819,6 +1833,8 @@ const ru = {
     backups: "Облачные копии",
     noBackups: "В этой папке облачные копии не найдены.",
     refresh: "Обновить",
+    deleteBackup: "Удалить копию",
+    deleteFailed: "Не удалось удалить облачную копию.",
     listFailed: "Не удалось загрузить облачные копии.",
     lastBackup: "Последняя копия: {{date}}"
   },

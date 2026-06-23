@@ -180,6 +180,7 @@ interface TranslationResult {
 | FR-55 | The user can restore a Lexora JSON backup in **replace** mode after confirmation. This clears local Lexora data on the device and replaces it with the backup contents. |
 | FR-56 | The user can import a CSV word list into the active learning setup. Supported columns include target text, translations, deck, and notes; duplicates by target text in the active setup are skipped. |
 | FR-57 | Direct Duolingo account connection is not part of phase 1 because there is no stable official vocabulary import API available for browser-direct use. Duolingo-derived word lists may be imported through the generic CSV path if the user obtains an export elsewhere. |
+| FR-58 | The user can connect Google Drive for backup storage, import/restore cloud backups, delete cloud backups after confirmation, and keep the authorization remembered so expired access tokens can be renewed silently when Google permits it. |
 
 ---
 

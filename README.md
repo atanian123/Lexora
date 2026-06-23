@@ -175,9 +175,10 @@ Supported cloud actions:
 - Create dated snapshot backups named `lexora-backup-{date}.json`.
 - Import a cloud backup by merging it into local data.
 - Restore a cloud backup by replacing local data after confirmation.
+- Delete a cloud backup after confirmation.
 - Automatically update the latest cloud backup after important local changes while Google Drive is connected.
 
-Google Drive backup is not full multi-device sync. It stores backup files that the user can import or restore.
+Google Drive backup is not full multi-device sync. It stores backup files that the user can import, restore, or delete. Google access tokens expire periodically; Lexora remembers that Drive was authorized and requests a silent token renewal before cloud operations when Google allows it.
 
 ### Google Cloud Configuration
 

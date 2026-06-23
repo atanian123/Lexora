@@ -70,7 +70,7 @@ import { scheduleReview } from "./lib/srs";
 import { fetchTranslationSuggestions, getTodayTranslationUsage } from "./lib/translation";
 import { ConfirmationProvider, useConfirm } from "./components/confirmation";
 import { FlagIcon, HeaderSelect, Label, Metric, NavButton, ViewTitle } from "./components/ui";
-import { type CloudBackupFile, createGoogleDriveBackupProvider } from "./lib/cloudBackup";
+import { cloudBackupAuthorizationStorageKey, type CloudBackupFile, createGoogleDriveBackupProvider } from "./lib/cloudBackup";
 
 type ViewKey = "study" | "library" | "decks" | "settings";
 type ThemeMode = "light" | "dark";
@@ -229,7 +229,7 @@ export default function App() {
     if (
       localStorage.getItem(cloudAutoBackupStorageKey) !== "true" ||
       !isOnline ||
-      !googleDriveProvider.isConnected()
+      localStorage.getItem(cloudBackupAuthorizationStorageKey) !== "true"
     ) {
       return;
     }
@@ -247,7 +247,12 @@ export default function App() {
           contents
         ))
         .then(() => setStatus(t("cloud.autoBackupSaved")))
-        .catch(() => setStatus(t("cloud.autoBackupSkipped")));
+        .catch(() => {
+          if (!googleDriveProvider.isConnected()) {
+            localStorage.removeItem(cloudBackupAuthorizationStorageKey);
+          }
+          setStatus(t("cloud.autoBackupSkipped"));
+        });
     }, 2500);
 
     return () => {
@@ -1992,7 +1997,9 @@ function SettingsView({
     localStorage.getItem(cloudFolderStorageKey) ?? defaultCloudBackupFolder
   );
   const [cloudAutoBackup, setCloudAutoBackup] = useState(() => localStorage.getItem(cloudAutoBackupStorageKey) === "true");
-  const [cloudConnected, setCloudConnected] = useState(() => cloudProvider.isConnected());
+  const [cloudConnected, setCloudConnected] = useState(() =>
+    localStorage.getItem(cloudBackupAuthorizationStorageKey) === "true" || cloudProvider.isConnected()
+  );
   const [cloudBackups, setCloudBackups] = useState<CloudBackupFile[]>([]);
   const [cloudBusy, setCloudBusy] = useState(false);
   const [lastCloudBackupAt, setLastCloudBackupAt] = useState<string | null>(null);
@@ -2182,6 +2189,7 @@ function SettingsView({
     setCloudBusy(true);
     try {
       await cloudProvider.connect();
+      localStorage.setItem(cloudBackupAuthorizationStorageKey, "true");
       setCloudConnected(true);
       onStatus(t("cloud.connected"));
       await refreshCloudBackups();
@@ -2194,6 +2202,7 @@ function SettingsView({
 
   function disconnectCloud() {
     cloudProvider.disconnect();
+    localStorage.removeItem(cloudBackupAuthorizationStorageKey);
     setCloudConnected(false);
     setCloudBackups([]);
     onStatus(t("cloud.disconnected"));
@@ -2208,10 +2217,14 @@ function SettingsView({
     setCloudBusy(true);
     try {
       const backups = await cloudProvider.listBackups(cloudFolderPath);
-      setCloudConnected(cloudProvider.isConnected());
+      localStorage.setItem(cloudBackupAuthorizationStorageKey, "true");
+      setCloudConnected(true);
       setCloudBackups(backups);
     } catch {
-      setCloudConnected(cloudProvider.isConnected());
+      if (!cloudProvider.isConnected()) {
+        localStorage.removeItem(cloudBackupAuthorizationStorageKey);
+        setCloudConnected(false);
+      }
       onStatus(t("cloud.listFailed"));
     } finally {
       setCloudBusy(false);
@@ -2230,12 +2243,16 @@ function SettingsView({
       const snapshotName = `lexora-backup-${formatBackupTimestamp(new Date())}.json`;
       await cloudProvider.uploadBackup(cloudFolderPath, latestCloudBackupFilename, contents);
       await cloudProvider.uploadBackup(cloudFolderPath, snapshotName, contents);
-      setCloudConnected(cloudProvider.isConnected());
+      localStorage.setItem(cloudBackupAuthorizationStorageKey, "true");
+      setCloudConnected(true);
       setLastCloudBackupAt(new Date().toISOString());
       onStatus(t("cloud.backupSaved"));
       await refreshCloudBackups();
     } catch {
-      setCloudConnected(cloudProvider.isConnected());
+      if (!cloudProvider.isConnected()) {
+        localStorage.removeItem(cloudBackupAuthorizationStorageKey);
+        setCloudConnected(false);
+      }
       onStatus(t("cloud.backupFailed"));
     } finally {
       setCloudBusy(false);
@@ -2251,9 +2268,46 @@ function SettingsView({
     setCloudBusy(true);
     try {
       const contents = await cloudProvider.downloadBackup(file.id);
+      localStorage.setItem(cloudBackupAuthorizationStorageKey, "true");
+      setCloudConnected(true);
       await importBackupContents(contents, mode);
     } catch {
       onStatus(t("status.importFailed"));
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function deleteCloudBackup(file: CloudBackupFile) {
+    if (!online) {
+      onStatus(t("cloud.offline"));
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: t("cloud.deleteBackup"),
+      message: `${t("common.confirmDelete")}\n\n${file.name}`,
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      variant: "danger"
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    setCloudBusy(true);
+    try {
+      await cloudProvider.deleteBackup(file.id);
+      localStorage.setItem(cloudBackupAuthorizationStorageKey, "true");
+      setCloudConnected(true);
+      setCloudBackups((current) => current.filter((backup) => backup.id !== file.id));
+      onStatus(t("status.deleted"));
+    } catch {
+      if (!cloudProvider.isConnected()) {
+        localStorage.removeItem(cloudBackupAuthorizationStorageKey);
+        setCloudConnected(false);
+      }
+      onStatus(t("cloud.deleteFailed"));
     } finally {
       setCloudBusy(false);
     }
@@ -2630,6 +2684,16 @@ function SettingsView({
                 </button>
                 <button className="app-button app-button-secondary app-button-compact" type="button" onClick={() => void importCloudBackup(backup, "replace")} disabled={cloudBusy || !online}>
                   {t("settings.importBackupReplace")}
+                </button>
+                <button
+                  className="app-button app-button-danger app-icon-button"
+                  type="button"
+                  onClick={() => void deleteCloudBackup(backup)}
+                  disabled={cloudBusy || !online}
+                  aria-label={t("cloud.deleteBackup")}
+                  data-tooltip={t("cloud.deleteBackup")}
+                >
+                  <Trash2 size={17} />
                 </button>
               </div>
             </div>

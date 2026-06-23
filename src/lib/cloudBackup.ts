@@ -15,6 +15,7 @@ export interface CloudBackupProvider {
   listBackups(folderPath: string): Promise<CloudBackupFile[]>;
   uploadBackup(folderPath: string, filename: string, contents: string): Promise<void>;
   downloadBackup(fileId: string): Promise<string>;
+  deleteBackup(fileId: string): Promise<void>;
 }
 
 interface GoogleTokenResponse {
@@ -55,6 +56,7 @@ const googleDriveUploadBaseUrl = "https://www.googleapis.com/upload/drive/v3";
 const driveFolderMimeType = "application/vnd.google-apps.folder";
 const backupMimeType = "application/json";
 const googleDriveScope = "https://www.googleapis.com/auth/drive.file";
+export const cloudBackupAuthorizationStorageKey = "lexora.cloud.googleDriveAuthorized";
 
 let googleIdentityScriptPromise: Promise<void> | null = null;
 
@@ -116,21 +118,25 @@ class GoogleDriveBackupProvider implements CloudBackupProvider {
 
       tokenClient.callback = (response) => {
         if (response.error || !response.access_token) {
+          this.disconnect();
           finish(() => reject(new Error(response.error || "google-auth-failed")));
           return;
         }
 
         this.accessToken = response.access_token;
         this.tokenExpiresAt = Date.now() + (response.expires_in ?? 3600) * 1000;
+        localStorage.setItem(cloudBackupAuthorizationStorageKey, "true");
         finish(resolve);
       };
-      tokenClient.requestAccessToken({ prompt: this.accessToken ? "" : "consent" });
+      const hasPreviousAuthorization = localStorage.getItem(cloudBackupAuthorizationStorageKey) === "true";
+      tokenClient.requestAccessToken({ prompt: this.accessToken || hasPreviousAuthorization ? "" : "consent" });
     });
   }
 
   disconnect(): void {
     this.accessToken = "";
     this.tokenExpiresAt = 0;
+    localStorage.removeItem(cloudBackupAuthorizationStorageKey);
   }
 
   async listBackups(folderPath: string): Promise<CloudBackupFile[]> {
@@ -174,6 +180,14 @@ class GoogleDriveBackupProvider implements CloudBackupProvider {
 
   async downloadBackup(fileId: string): Promise<string> {
     return this.driveFetchText(`${googleDriveApiBaseUrl}/files/${encodeURIComponent(fileId)}?alt=media`);
+  }
+
+  async deleteBackup(fileId: string): Promise<void> {
+    await this.driveFetch(`${googleDriveApiBaseUrl}/files/${encodeURIComponent(fileId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trashed: true })
+    });
   }
 
   private async getTokenClient(): Promise<GoogleTokenClient> {
