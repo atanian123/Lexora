@@ -124,6 +124,16 @@ export function FlagIcon({ code }: { code: LanguageCode }) {
     );
   }
 
+  if (code === "bg") {
+    return (
+      <svg className={common} viewBox="0 0 30 20" aria-hidden="true">
+        <rect width="30" height="20" fill="#d62612" />
+        <rect width="30" height="13.33" fill="#00966e" />
+        <rect width="30" height="6.67" fill="#ffffff" />
+      </svg>
+    );
+  }
+
   return (
     <svg className={common} viewBox="0 0 30 20" aria-hidden="true">
       <rect width="30" height="20" fill="#012169" />

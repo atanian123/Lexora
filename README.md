@@ -23,6 +23,7 @@ Lexora supports the following app and study languages in phase 1:
 
 - English
 - German
+- Bulgarian
 - French
 - Italian
 - Spanish

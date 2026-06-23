@@ -53,7 +53,7 @@
 |----|-------------|
 | FR-01 | The user selects an **app language** (the language used for UI labels, buttons, messages, and settings). |
 | FR-02 | The user selects one active **learning setup**, which defines the base language and target language used for vocabulary, translation, and exercises. |
-| FR-03 | Supported languages in phase 1: **English (EN), German (DE), French (FR), Italian (IT), Spanish (ES), Portuguese (PT), Russian (RU)**. |
+| FR-03 | Supported languages in phase 1: **English (EN), German (DE), Bulgarian (BG), French (FR), Italian (IT), Spanish (ES), Portuguese (PT), Russian (RU)**. |
 | FR-04 | The app UI is rendered in the selected **app language**, independently from any learning setup's base or target language. |
 | FR-05 | The app language can be changed in settings at any time. Existing learning data is preserved. |
 
@@ -242,9 +242,9 @@ interface TranslationResult {
 | ID | Requirement |
 |----|-------------|
 | NFR-18 | App UI strings are externalised via **i18next** — no hard-coded labels in components. |
-| NFR-19 | UI translations are provided for all 7 supported languages (EN, DE, FR, IT, ES, PT, RU). |
+| NFR-19 | UI translations are provided for all 8 supported languages (EN, DE, BG, FR, IT, ES, PT, RU). |
 | NFR-20 | Date/time formatting respects the user's locale. |
-| NFR-21 | RTL layout is not required in phase 1 (none of the 7 languages are RTL). |
+| NFR-21 | RTL layout is not required in phase 1 (none of the 8 languages are RTL). |
 
 ---
 
@@ -269,7 +269,7 @@ interface TranslationResult {
 | Styling | **Tailwind CSS** | Mobile-first, no runtime overhead |
 | Local DB | **Dexie.js** (IndexedDB) | Offline-first, TypeScript-friendly, Dexie Cloud-ready |
 | Spaced Repetition | **ts-fsrs** | FSRS algorithm, actively maintained, TypeScript |
-| Translation (phase 1) | **MyMemory API** | No API key, browser-direct, supports all 7 languages |
+| Translation (phase 1) | **MyMemory API** | No API key, browser-direct, supports all 8 languages |
 | i18n | **i18next + react-i18next** | Industry standard, lazy loading, pluralisation |
 | Future sync | **Dexie Cloud** | Drop-in sync for Dexie, no backend required |
 

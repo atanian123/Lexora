@@ -122,9 +122,9 @@
 :root {
   color: var(--text-body);
   background: var(--bg-base);
-  --motion-fast: 140ms;
-  --motion-medium: 220ms;
-  --motion-slow: 320ms;
+  --motion-fast: 190ms;
+  --motion-medium: 340ms;
+  --motion-slow: 480ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   font-family:
@@ -257,6 +257,33 @@ textarea:focus-visible {
 
 .mobile-menu-trigger {
   display: inline-flex;
+}
+
+.mobile-active-language {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(62vw, 16rem);
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--chip-border);
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--chip-text);
+  padding: 0.24rem 0.52rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.15;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--shadow-color) 10%, transparent);
+  transition:
+    border-color var(--motion-medium) var(--ease-standard),
+    background-color var(--motion-medium) var(--ease-standard),
+    transform var(--motion-medium) var(--ease-standard);
+}
+
+.mobile-active-language:hover,
+.mobile-active-language:focus-visible {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--chip-border));
 }
 
 .desktop-preferences,
@@ -580,12 +607,17 @@ select.app-input {
 }
 
 .app-view-transition {
-  animation: view-in var(--motion-medium) var(--ease-emphasized);
+  animation: view-in var(--motion-slow) var(--ease-emphasized);
 }
 
 .app-view-transition .app-panel,
 .app-view-transition .app-subpanel {
   animation: surface-in var(--motion-medium) var(--ease-emphasized);
+}
+
+.app-expand {
+  animation: surface-in var(--motion-medium) var(--ease-emphasized);
+  transform-origin: top;
 }
 
 .app-glass {
@@ -603,7 +635,7 @@ select.app-input {
     radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 34rem),
     rgba(2, 6, 23, 0.58);
   padding: 1rem;
-  animation: confirm-fade-in 140ms ease-out;
+  animation: confirm-fade-in var(--motion-fast) var(--ease-standard);
 }
 
 .confirm-dialog {
@@ -615,7 +647,7 @@ select.app-input {
   background: color-mix(in srgb, var(--bg-surface) 97%, transparent);
   box-shadow: 0 28px 70px rgba(2, 6, 23, 0.42), 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
   padding: 1rem;
-  animation: confirm-pop-in 160ms ease-out;
+  animation: confirm-pop-in var(--motion-medium) var(--ease-emphasized);
 }
 
 .confirm-dialog-mark {
@@ -736,6 +768,11 @@ select.app-input {
   cursor: not-allowed;
   box-shadow: none;
   color: var(--text-subtle);
+}
+
+.transition-transform {
+  transition-duration: var(--motion-medium) !important;
+  transition-timing-function: var(--ease-emphasized) !important;
 }
 
 .app-button-compact {
@@ -870,8 +907,165 @@ select.app-input {
 }
 
 .app-panel[role="listbox"] {
-  animation: surface-in var(--motion-fast) var(--ease-emphasized);
+  animation: surface-in var(--motion-medium) var(--ease-emphasized);
   transform-origin: top;
+}
+
+.study-card {
+  perspective: 1200px;
+  margin-bottom: 1rem;
+}
+
+.study-card-inner {
+  position: relative;
+  min-height: 10.5rem;
+  transform-style: preserve-3d;
+  transition: transform 760ms var(--ease-emphasized);
+}
+
+.study-card-revealed .study-card-inner {
+  transform: rotateY(180deg);
+}
+
+.study-card-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-height: 10.5rem;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 16%, transparent), transparent 18rem),
+    var(--subpanel-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 7%, transparent);
+  padding: 1rem;
+  backface-visibility: hidden;
+}
+
+.study-card-back {
+  overflow: visible;
+  transform: rotateY(180deg);
+}
+
+.study-card-back-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+}
+
+.study-rating-rail {
+  position: relative;
+  z-index: 20;
+  display: grid;
+  width: 5.25rem;
+  gap: 0.35rem;
+}
+
+.study-rating-button {
+  min-height: 1.85rem;
+  border-radius: 7px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.study-answer-reveal {
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-surface) 42%, transparent);
+  padding: 0.45rem 0.65rem;
+  color: var(--text-heading);
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.25;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.study-rating-button[data-tooltip]:not([data-tooltip=""])::after {
+  top: 50%;
+  right: calc(100% + 0.55rem);
+  transform: translateY(-50%) scale(0.98);
+  transform-origin: right center;
+}
+
+.study-rating-button[data-tooltip]:not([data-tooltip=""])::before {
+  top: 50%;
+  right: calc(100% + 0.24rem);
+  transform: translateY(-50%) rotate(135deg) scale(0.98);
+  transform-origin: center;
+}
+
+.study-rating-button[data-tooltip]:not([data-tooltip=""]):hover::after,
+.study-rating-button[data-tooltip]:not([data-tooltip=""]):focus-visible::after {
+  transform: translateY(-50%) scale(1);
+}
+
+.study-rating-button[data-tooltip]:not([data-tooltip=""]):hover::before,
+.study-rating-button[data-tooltip]:not([data-tooltip=""]):focus-visible::before {
+  transform: translateY(-50%) rotate(135deg) scale(1);
+}
+
+.study-card-correct .study-card-back {
+  border-color: var(--success-border);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--success-text) 20%, transparent), transparent 18rem),
+    var(--success-surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--success-text) 14%, transparent), 0 14px 34px color-mix(in srgb, var(--success-text) 14%, transparent);
+}
+
+.study-card-close .study-card-back {
+  border-color: var(--warning-border);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--warning-text) 20%, transparent), transparent 18rem),
+    var(--warning-surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--warning-text) 14%, transparent), 0 14px 34px color-mix(in srgb, var(--warning-text) 14%, transparent);
+}
+
+.study-card-wrong .study-card-back {
+  border-color: var(--danger-border);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--danger-text) 18%, transparent), transparent 18rem),
+    var(--danger-surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger-text) 14%, transparent), 0 14px 34px color-mix(in srgb, var(--danger-text) 14%, transparent);
+}
+
+.library-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15.5rem), 1fr));
+  gap: 0.55rem;
+  padding: 0.6rem;
+}
+
+.library-word-card {
+  min-width: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 8%, transparent), transparent 11rem),
+    var(--subpanel-bg);
+  box-shadow: var(--panel-shadow);
+  padding: 0.65rem;
+  transition:
+    border-color var(--motion-medium) var(--ease-standard),
+    box-shadow var(--motion-medium) var(--ease-standard),
+    transform var(--motion-medium) var(--ease-standard);
+}
+
+.usage-progress-fill {
+  transition-duration: 700ms !important;
+  transition-timing-function: var(--ease-emphasized) !important;
+}
+
+.library-word-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--panel-border));
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--accent) 10%, transparent), var(--panel-shadow);
+  transform: translateY(-1px);
 }
 
 .theme-toggle-label {
@@ -1185,6 +1379,26 @@ select.app-input {
     min-height: 2.15rem;
     min-width: 4.75rem;
     padding: 0.35rem 0.55rem;
+  }
+
+  .study-card-inner,
+  .study-card-face {
+    min-height: 12rem;
+  }
+
+  .study-card-back-layout {
+    grid-template-columns: minmax(0, 1fr) 4.6rem;
+    gap: 0.6rem;
+  }
+
+  .study-rating-rail {
+    width: 4.6rem;
+  }
+
+  .study-rating-button {
+    min-height: 1.75rem;
+    padding-inline: 0.3rem;
+    font-size: 0.68rem;
   }
 }
 

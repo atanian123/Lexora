@@ -7,7 +7,8 @@ export const languageNames: Record<LanguageCode, string> = {
   it: "Italian",
   es: "Spanish",
   pt: "Portuguese",
-  ru: "Russian"
+  ru: "Russian",
+  bg: "Bulgarian"
 };
 
 export const languageFlags: Record<LanguageCode, string> = {
@@ -17,7 +18,8 @@ export const languageFlags: Record<LanguageCode, string> = {
   it: "🇮🇹",
   es: "🇪🇸",
   pt: "🇵🇹",
-  ru: "🇷🇺"
+  ru: "🇷🇺",
+  bg: "🇧🇬"
 };
 
 export const defaultDeckNames: Record<LanguageCode, string> = {
@@ -27,7 +29,8 @@ export const defaultDeckNames: Record<LanguageCode, string> = {
   it: "Predefinito",
   es: "Predeterminado",
   pt: "Predefinido",
-  ru: "По умолчанию"
+  ru: "По умолчанию",
+  bg: "Основен"
 };
 
 export const defaultBaseLanguage: LanguageCode = "en";

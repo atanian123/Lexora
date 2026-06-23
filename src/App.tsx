@@ -445,20 +445,19 @@ export default function App() {
 
       <nav className="app-nav app-glass border-b sm:hidden" aria-label="Primary">
         <div className="mx-auto max-w-7xl px-3 sm:px-6">
-          <div className="flex min-h-11 items-center sm:hidden">
-            <div className="min-w-0">
+          <div className="flex min-h-11 items-center justify-between gap-2 sm:hidden">
+            <div className="min-w-0 shrink">
               <span className="app-heading block text-sm font-semibold">{currentNavLabel(view, t)}</span>
-              {activeSetup ? (
-                <span className="app-subtle mt-1 flex items-center gap-1 text-xs font-semibold">
-                  <FlagIcon code={activeSetup.targetLanguage} />
-                  <span className="truncate">{languageOptionLabel(activeSetup.targetLanguage, activeProfile.uiLanguage)}</span>
-                  <span className="app-muted">·</span>
-                  <span className="truncate">{t("setup.baseShort")}:</span>
-                  <FlagIcon code={activeSetup.baseLanguage} />
-                  <span className="truncate">{languageOptionLabel(activeSetup.baseLanguage, activeProfile.uiLanguage)}</span>
-                </span>
-              ) : null}
             </div>
+            {activeSetup ? (
+              <span
+                className="mobile-active-language"
+                data-tooltip={`${learningSetupDisplayName(activeSetup, activeProfile.uiLanguage)} · ${t("setup.baseShort")}: ${languageOptionLabel(activeSetup.baseLanguage, activeProfile.uiLanguage)}`}
+              >
+                <FlagIcon code={activeSetup.targetLanguage} />
+                <span className="truncate">{learningSetupDisplayName(activeSetup, activeProfile.uiLanguage)}</span>
+              </span>
+            ) : null}
           </div>
         </div>
       </nav>
@@ -1011,18 +1010,13 @@ function StudyView({
   if (session?.current) {
     const prompt = getPrompt(session.current);
     const accepted = getAcceptedAnswers(session.current);
-    const resultTone =
-      session.match === "correct" || (session.match === "close" && session.closeAccepted)
+    const resultTone = !session.revealed
+      ? "pending"
+      : session.match === "correct" || (session.match === "close" && session.closeAccepted)
         ? "correct"
         : session.match === "close"
           ? "close"
           : "wrong";
-    const resultPanelClass =
-      resultTone === "correct"
-        ? "app-success shadow-[0_0_0_1px_rgba(16,185,129,0.15),0_12px_30px_rgba(16,185,129,0.15)]"
-        : resultTone === "wrong"
-          ? "app-danger-surface shadow-[0_0_0_1px_rgba(244,63,94,0.15),0_12px_30px_rgba(244,63,94,0.15)]"
-          : "app-warning shadow-[0_0_0_1px_rgba(245,158,11,0.12),0_12px_30px_rgba(245,158,11,0.12)]";
     const resultLabelClass =
       resultTone === "correct" ? "text-emerald-500" : resultTone === "wrong" ? "text-rose-500" : "text-amber-500";
     return (
@@ -1039,21 +1033,77 @@ function StudyView({
           </div>
         </div>
         <div className="app-panel p-4">
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <span className="app-chip">{directionLabel(session.current.card.direction, t)}</span>
-            <span className="app-chip">{session.reviewed} {t("study.reviewed")}</span>
-          </div>
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <p className="app-heading text-2xl font-bold">{prompt}</p>
-            <button
-              className="app-button app-button-secondary h-11 w-11 shrink-0 p-0"
-              type="button"
-              disabled
-              aria-label={t("study.audioPlaceholder")}
-              data-tooltip={t("study.audioPlaceholder")}
-            >
-              <Volume2 size={18} />
-            </button>
+          <div className={`study-card study-card-${resultTone} ${session.revealed ? "study-card-revealed" : ""}`}>
+            <div className="study-card-inner">
+              <div className="study-card-face study-card-front">
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  <span className="app-chip">{directionLabel(session.current.card.direction, t)}</span>
+                  <span className="app-chip">{session.reviewed} {t("study.reviewed")}</span>
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="app-heading text-2xl font-bold">{prompt}</p>
+                  <button
+                    className="app-button app-button-secondary h-11 w-11 shrink-0 p-0"
+                    type="button"
+                    disabled
+                    aria-label={t("study.audioPlaceholder")}
+                    data-tooltip={t("study.audioPlaceholder")}
+                  >
+                    <Volume2 size={18} />
+                  </button>
+                </div>
+              </div>
+              <div className="study-card-face study-card-back">
+                <div className="study-card-back-layout">
+                  <div className="min-w-0">
+                    <p className={`text-sm font-semibold ${resultLabelClass}`}>
+                      {session.match === "correct" ? t("study.correctAnswer") : null}
+                      {session.match === "close" ? t("study.closeAnswer") : null}
+                      {session.match === "wrong" ? t("study.wrongAnswer") : null}
+                    </p>
+                    <p className="app-subtle mt-3 text-xs font-semibold">{directionLabel(session.current.card.direction, t)}</p>
+                    <p className="app-muted mt-1 text-sm font-medium">{prompt}</p>
+                    <p className="mt-2 text-sm font-semibold opacity-70">{t("study.reveal")}</p>
+                    <p className="study-answer-reveal mt-1">{accepted.join(" / ")}</p>
+                    {session.match === "close" ? (
+                      <label className="mt-3 flex items-center gap-2 text-sm font-semibold">
+                        <input
+                          type="checkbox"
+                          checked={session.closeAccepted}
+                          onChange={(event) =>
+                            setSession({
+                              ...session,
+                              closeAccepted: event.target.checked,
+                              selectedRating: defaultRatingForMatch(session.match ?? "wrong", event.target.checked)
+                            })
+                          }
+                        />
+                        {t("study.acceptClose")}
+                      </label>
+                    ) : null}
+                  </div>
+                  <div className="study-rating-rail" aria-label={t("study.ratingHelp")}>
+                    {ratings.map((rating) => (
+                      <button
+                        key={rating}
+                        className={`app-button study-rating-button ${
+                          session.selectedRating === rating
+                            ? rating === "again"
+                              ? "app-button-danger"
+                              : "app-button-primary"
+                            : "app-button-secondary"
+                        }`}
+                        onClick={() => setSession({ ...session, selectedRating: rating })}
+                        data-tooltip={`${t(`study.${rating}`)}: ${t(`study.${rating}Hint`)}`}
+                        type="button"
+                      >
+                        {t(`study.${rating}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <Label text={t("study.answer")}>
             <input
@@ -1080,51 +1130,6 @@ function StudyView({
             </button>
           ) : (
             <div className="mt-5 grid gap-4">
-              <div className={`rounded-lg border p-3 ${resultPanelClass}`}>
-                <p className={`text-sm font-semibold ${resultLabelClass}`}>
-                  {session.match === "correct" ? t("study.correctAnswer") : null}
-                  {session.match === "close" ? t("study.closeAnswer") : null}
-                  {session.match === "wrong" ? t("study.wrongAnswer") : null}
-                </p>
-                <p className="mt-2 text-sm font-semibold opacity-60">{t("study.reveal")}</p>
-                <p className="mt-1 text-lg font-semibold">{accepted.join(" / ")}</p>
-                {session.match === "close" ? (
-                  <label className="mt-3 flex items-center gap-2 text-sm font-semibold">
-                    <input
-                      type="checkbox"
-                      checked={session.closeAccepted}
-                      onChange={(event) =>
-                        setSession({
-                          ...session,
-                          closeAccepted: event.target.checked,
-                          selectedRating: defaultRatingForMatch(session.match ?? "wrong", event.target.checked)
-                        })
-                      }
-                    />
-                    {t("study.acceptClose")}
-                  </label>
-                ) : null}
-              </div>
-              <p className="app-muted text-sm">{t("study.ratingHelp")}</p>
-              <div className="grid grid-cols-4 gap-1.5 sm:w-fit">
-                {ratings.map((rating) => (
-                  <button
-                    key={rating}
-                    className={`app-button min-h-9 px-2 py-1 text-xs ${
-                      session.selectedRating === rating
-                        ? rating === "again"
-                          ? "app-button-danger"
-                          : "app-button-primary"
-                        : "app-button-secondary"
-                    }`}
-                    onClick={() => setSession({ ...session, selectedRating: rating })}
-                    data-tooltip={`${t(`study.${rating}`)}: ${t(`study.${rating}Hint`)}`}
-                    type="button"
-                  >
-                    {t(`study.${rating}`)}
-                  </button>
-                ))}
-              </div>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="app-subtle text-xs">
                   {t("study.selectedRating", {
@@ -1558,7 +1563,7 @@ function LibraryView({
         </div>
 
         {showWordDetails ? (
-          <div className="app-subpanel grid gap-3 p-3 md:grid-cols-[16rem_minmax(0,1fr)]">
+          <div className="app-subpanel app-expand grid gap-3 p-3 md:grid-cols-[16rem_minmax(0,1fr)]">
             <Label text={t("common.deck")}>
               <select className="app-input" value={form.deckId} onChange={(event) => setForm({ ...form, deckId: event.target.value })}>
                 {decks.map((deck) => (
@@ -1600,7 +1605,7 @@ function LibraryView({
           </button>
         </div>
         {showFilters ? (
-          <div className="app-divider grid gap-3 border-t pt-3 md:grid-cols-2">
+          <div className="app-divider app-expand grid gap-3 border-t pt-3 md:grid-cols-2">
           <Label text={t("common.deck")}>
             <select className="app-input" value={deckFilter} onChange={(event) => setDeckFilter(event.target.value)}>
               <option value="all">{t("common.all")}</option>
@@ -1656,31 +1661,34 @@ function LibraryView({
         {filteredWords.length === 0 ? (
           <div className="app-muted p-4">{t("library.noWords")}</div>
         ) : null}
-        {pagedWords.map((word) => (
-          <article key={word.id} className="app-divider border-t px-3 py-2.5 first:border-t-0">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <h3 className="app-heading font-semibold leading-snug">{word.targetText}</h3>
-                  <p className="app-muted text-sm leading-snug">{word.translations.join(" / ")}</p>
+        {pagedWords.length > 0 ? (
+          <div className="library-card-grid">
+            {pagedWords.map((word) => (
+              <article key={word.id} className="library-word-card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="app-subtle text-[0.64rem] font-semibold uppercase tracking-wide">{languageOptionLabel(setup.targetLanguage, profile.uiLanguage)}</p>
+                    <h3 className="app-heading mt-0.5 text-base font-bold leading-snug">{word.targetText}</h3>
+                    <p className="app-muted mt-0.5 text-xs font-semibold leading-snug">{word.translations.join(" / ")}</p>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <button className="app-button app-button-secondary app-icon-button" onClick={() => editWord(word)} aria-label={t("common.edit")} data-tooltip={t("common.edit")}>
+                      <Edit2 size={17} />
+                    </button>
+                    <button className="app-button app-button-danger app-icon-button" onClick={() => deleteWord(word)} aria-label={t("common.delete")} data-tooltip={t("common.delete")}>
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
                 </div>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <div className="mt-2 flex flex-wrap gap-1">
                   <span className="app-chip">{decks.find((deck) => deck.id === word.deckId)?.name ?? t("common.deck")}</span>
                   <span className="app-chip">{formatLastReviewed(cardByWord.get(word.id), t("library.lastReviewed"), profile.uiLanguage)}</span>
                 </div>
                 {word.notes ? <p className="app-subtle mt-1.5 text-xs leading-relaxed">{word.notes}</p> : null}
-              </div>
-              <div className="flex shrink-0 gap-1">
-                <button className="app-button app-button-secondary app-icon-button" onClick={() => editWord(word)} aria-label={t("common.edit")} data-tooltip={t("common.edit")}>
-                  <Edit2 size={17} />
-                </button>
-                <button className="app-button app-button-danger app-icon-button" onClick={() => deleteWord(word)} aria-label={t("common.delete")} data-tooltip={t("common.delete")}>
-                  <Trash2 size={17} />
-                </button>
-              </div>
-            </div>
-          </article>
-        ))}
+              </article>
+            ))}
+          </div>
+        ) : null}
         {wordPageCount > 1 ? (
           <div className="app-divider flex items-center justify-end gap-2 border-t px-3 py-2.5">
             {wordPager}
@@ -3282,15 +3290,31 @@ function setupNamePlaceholder(
 
 function learningSetupDisplayName(setup: LearningSetup, locale = "en"): string {
   const friendlyName = languageOptionLabel(setup.targetLanguage, locale);
-  const generatedNames = new Set([
-    defaultSetupName(setup.baseLanguage, setup.targetLanguage, locale),
-    defaultSetupName(setup.baseLanguage, setup.targetLanguage),
-    `${setup.targetLanguage.toUpperCase()} over ${setup.baseLanguage.toUpperCase()}`,
-    `${languageNames[setup.targetLanguage]} over ${languageNames[setup.baseLanguage]}`,
-    `${languageNames[setup.targetLanguage]} from ${languageNames[setup.baseLanguage]}`
-  ]);
+  const generatedNames = generatedSetupNames(setup.baseLanguage, setup.targetLanguage, locale);
 
   return generatedNames.has(setup.name) ? friendlyName : `${setup.name} · ${friendlyName}`;
+}
+
+function generatedSetupNames(baseLanguage: LanguageCode, targetLanguage: LanguageCode, locale = "en"): Set<string> {
+  const generatedNames = new Set([
+    defaultSetupName(baseLanguage, targetLanguage, locale),
+    defaultSetupName(baseLanguage, targetLanguage),
+    `${targetLanguage.toUpperCase()} over ${baseLanguage.toUpperCase()}`,
+    `${languageNames[targetLanguage]} over ${languageNames[baseLanguage]}`,
+    `${languageNames[targetLanguage]} from ${languageNames[baseLanguage]}`
+  ]);
+  const generatedNameConnectors = ["from", "over", "mit", "от", "depuis", "da", "desde", "a partir de", "с"];
+
+  for (const generatedLocale of languageCodes) {
+    const targetName = localizedLanguageName(targetLanguage, generatedLocale);
+    const baseName = localizedLanguageName(baseLanguage, generatedLocale);
+    generatedNames.add(defaultSetupName(baseLanguage, targetLanguage, generatedLocale));
+    for (const connector of generatedNameConnectors) {
+      generatedNames.add(`${targetName} ${connector} ${baseName}`);
+    }
+  }
+
+  return generatedNames;
 }
 
 function setupBaseContext(baseLanguage: LanguageCode, locale = "en", label = "From"): string {
