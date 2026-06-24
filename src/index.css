@@ -125,6 +125,7 @@
   --motion-fast: 190ms;
   --motion-medium: 340ms;
   --motion-slow: 480ms;
+  --tooltip-delay: 1.2s;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   font-family:
@@ -514,6 +515,10 @@ textarea:focus-visible {
   font-size: 0.9rem;
 }
 
+.app-input-with-leading-icon {
+  padding-left: 2.35rem;
+}
+
 .chrome-preferences {
   display: inline-flex;
   align-items: center;
@@ -617,6 +622,33 @@ select.app-input {
     border-color var(--motion-medium) var(--ease-standard),
     background-color var(--motion-medium) var(--ease-standard),
     box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 34rem),
+    rgba(2, 6, 23, 0.58);
+  padding: 1rem;
+  animation: confirm-fade-in var(--motion-fast) var(--ease-standard);
+}
+
+.edit-word-modal {
+  display: grid;
+  width: min(100%, 38rem);
+  max-height: min(100%, 42rem);
+  gap: 0.9rem;
+  overflow: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-surface) 97%, transparent);
+  box-shadow: 0 28px 70px rgba(2, 6, 23, 0.42), 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
+  padding: 1rem;
+  animation: confirm-pop-in var(--motion-medium) var(--ease-emphasized);
 }
 
 .app-view-transition {
@@ -946,9 +978,53 @@ select.app-input {
   transition: transform var(--motion-medium) var(--ease-emphasized), background-color var(--motion-medium) var(--ease-standard);
 }
 
-.app-panel[role="listbox"] {
-  animation: surface-in var(--motion-medium) var(--ease-emphasized);
+.dropdown-panel {
+  overflow: auto;
+  border-color: var(--panel-border);
+  border-radius: 12px;
+  background: var(--panel-bg);
+  padding: 0.4rem;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-0.3rem) scale(0.99);
   transform-origin: top;
+  box-shadow:
+    0 16px 36px color-mix(in srgb, var(--shadow-color) 22%, transparent),
+    var(--panel-shadow);
+  backdrop-filter: blur(16px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  transition:
+    opacity var(--motion-medium) var(--ease-standard),
+    visibility 0s linear var(--motion-medium),
+    transform var(--motion-medium) var(--ease-emphasized),
+    border-color var(--motion-medium) var(--ease-standard),
+    background-color var(--motion-medium) var(--ease-standard),
+    box-shadow var(--motion-medium) var(--ease-standard);
+}
+
+.dropdown-panel::-webkit-scrollbar {
+  width: 0.55rem;
+}
+
+.dropdown-panel::-webkit-scrollbar-thumb {
+  border: 0.16rem solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: var(--scrollbar-thumb);
+}
+
+.dropdown-panel::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-hover);
+}
+
+.dropdown-panel-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition-delay: 0s;
 }
 
 .study-card {
@@ -1080,6 +1156,112 @@ select.app-input {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 15.5rem), 1fr));
   gap: 0.55rem;
   padding: 0.6rem;
+}
+
+.library-panel-toggle {
+  display: inline-flex;
+  height: 2.15rem;
+  width: 2.15rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--button-border));
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 62%),
+    var(--button-secondary-bg);
+  color: var(--button-secondary-text);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--shadow-color) 12%, transparent);
+  transition:
+    border-color var(--motion-medium) var(--ease-standard),
+    background-color var(--motion-medium) var(--ease-standard),
+    box-shadow var(--motion-medium) var(--ease-standard),
+    color var(--motion-medium) var(--ease-standard),
+    transform var(--motion-medium) var(--ease-emphasized);
+}
+
+.library-panel-toggle:hover {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--button-border));
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--accent) 18%, transparent);
+  transform: translateY(-1px);
+}
+
+.library-panel-toggle:active {
+  transform: translateY(0);
+}
+
+.library-panel-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--focus-ring) 80%, transparent);
+  outline-offset: 2px;
+}
+
+.library-capture-options {
+  display: grid;
+  grid-template-columns: minmax(9.5rem, 13rem) minmax(14rem, 1fr) max-content;
+  align-items: end;
+  gap: 0.6rem;
+  border: 1px solid var(--subpanel-border);
+  border-radius: 10px;
+  background: var(--subpanel-bg);
+  padding: 0.65rem;
+}
+
+.library-capture-options > label {
+  align-self: stretch;
+}
+
+.library-capture-options .app-button {
+  align-self: end;
+  min-height: 2.35rem;
+}
+
+.library-note-input {
+  height: 2.35rem;
+  min-height: 2.35rem;
+  line-height: 1.2;
+  overflow: hidden;
+  resize: vertical;
+}
+
+.deck-word-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+  border-radius: 9px;
+  padding: 0.45rem 0.55rem;
+  color: var(--text-label);
+  transition:
+    background-color var(--motion-medium) var(--ease-standard),
+    transform var(--motion-medium) var(--ease-standard);
+}
+
+.deck-word-option:hover {
+  background: var(--dropdown-hover-bg);
+  transform: translateX(1px);
+}
+
+.deck-word-option-target,
+.deck-word-option-translation {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deck-word-option-target {
+  color: var(--text-heading);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.deck-word-option-translation {
+  color: var(--text-subtle);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .library-word-card {
@@ -1220,10 +1402,15 @@ select.app-input {
   transform: rotate(45deg);
 }
 
-.usage-badge:hover .tooltip-bubble,
 .usage-badge:focus-within .tooltip-bubble {
   opacity: 1;
   transform: translateY(0) scale(1);
+}
+
+.usage-badge:hover .tooltip-bubble {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition-delay: var(--tooltip-delay);
 }
 
 .tooltip-title {
@@ -1301,20 +1488,30 @@ select.app-input {
   transform-origin: center;
 }
 
-[data-tooltip]:not([data-tooltip=""]):hover::after,
 [data-tooltip]:not([data-tooltip=""]):focus-visible::after,
-[data-tooltip]:not([data-tooltip=""]):hover::before,
 [data-tooltip]:not([data-tooltip=""]):focus-visible::before {
   opacity: 1;
 }
 
-[data-tooltip]:not([data-tooltip=""]):hover::after,
 [data-tooltip]:not([data-tooltip=""]):focus-visible::after {
   transform: translateY(0) scale(1);
 }
 
-[data-tooltip]:not([data-tooltip=""]):hover::before,
 [data-tooltip]:not([data-tooltip=""]):focus-visible::before {
+  transform: translateY(0) rotate(45deg) scale(1);
+}
+
+[data-tooltip]:not([data-tooltip=""]):hover::after,
+[data-tooltip]:not([data-tooltip=""]):hover::before {
+  opacity: 1;
+  transition-delay: var(--tooltip-delay);
+}
+
+[data-tooltip]:not([data-tooltip=""]):hover::after {
+  transform: translateY(0) scale(1);
+}
+
+[data-tooltip]:not([data-tooltip=""]):hover::before {
   transform: translateY(0) rotate(45deg) scale(1);
 }
 
@@ -1390,6 +1587,17 @@ select.app-input {
 }
 
 @media (max-width: 639px) {
+  .modal-overlay {
+    align-items: end;
+    padding: 0.5rem;
+  }
+
+  .edit-word-modal {
+    width: 100%;
+    max-height: min(88dvh, 42rem);
+    border-radius: 16px 16px 12px 12px;
+  }
+
   .app-view-transition > section.grid {
     gap: 0.75rem;
   }
@@ -1440,6 +1648,14 @@ select.app-input {
     padding-inline: 0.3rem;
     font-size: 0.68rem;
   }
+
+  .library-capture-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .library-capture-options .app-button {
+    width: 100%;
+  }
 }
 
 /* Chips */
@@ -1458,17 +1674,35 @@ select.app-input {
 }
 
 .dropdown-option {
+  position: relative;
   color: var(--dropdown-text);
+  border: 1px solid transparent;
+  border-radius: 9px;
+  min-height: 2.35rem;
+  outline: none;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
-.dropdown-option:hover {
+.dropdown-option:hover,
+.dropdown-option:focus-visible {
+  border-color: var(--border-subtle);
   background: var(--dropdown-hover-bg);
+  color: var(--text-heading);
 }
 
 .dropdown-option-active {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border-subtle));
   background: var(--dropdown-active-bg);
-  color: var(--dropdown-active-text);
+  box-shadow: inset 3px 0 0 var(--accent);
+  color: var(--text-heading);
   font-weight: 600;
+}
+
+.dropdown-option-active::after {
+  display: none;
 }
 
 .nav-button-active {

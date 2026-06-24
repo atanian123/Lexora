@@ -114,6 +114,55 @@ class LexoraDatabase extends Dexie {
           });
         }
       });
+
+    this.version(4)
+      .stores({
+        profiles: "&id, name, activeLearningSetupId, updatedAt",
+        learningSetups: "&id, profileId, [profileId+name], [profileId+baseLanguage+targetLanguage], updatedAt",
+        decks: "&id, profileId, learningSetupId, [learningSetupId+name]",
+        words: "&id, profileId, learningSetupId, deckId, targetText, updatedAt",
+        subsets: "&id, profileId, learningSetupId, name, updatedAt",
+        cards: "&id, profileId, learningSetupId, wordId, [wordId+direction], due, [learningSetupId+direction+due]",
+        translationUsage: "&id, provider, date"
+      })
+      .upgrade(async (transaction) => {
+        const setupsTable = transaction.table("learningSetups");
+        const decksTable = transaction.table("decks");
+        const wordsTable = transaction.table("words");
+        const setups = (await setupsTable.toArray()) as LearningSetup[];
+        const decks = (await decksTable.toArray()) as Deck[];
+        const timestamp = nowIso();
+        const obsoleteInboxNames = new Set(["Inbox", "Eingang", "Входящи", "Boîte de réception", "Bandeja", "Entrada", "Входящие"]);
+
+        for (const deck of decks) {
+          if (!obsoleteInboxNames.has(deck.name)) {
+            continue;
+          }
+
+          const setup = setups.find((candidate) => candidate.id === deck.learningSetupId);
+          const defaultName = defaultDeckNames[setup?.baseLanguage ?? defaultBaseLanguage];
+          let targetDeck = decks.find((candidate) => candidate.learningSetupId === deck.learningSetupId && candidate.name === defaultName);
+
+          if (!targetDeck) {
+            targetDeck = {
+              id: createId("deck"),
+              profileId: deck.profileId,
+              learningSetupId: deck.learningSetupId,
+              name: defaultName,
+              createdAt: timestamp,
+              updatedAt: timestamp
+            };
+            await decksTable.add(targetDeck);
+            decks.push(targetDeck);
+          }
+
+          await wordsTable.where("deckId").equals(deck.id).modify((word: WordEntry) => {
+            word.deckId = targetDeck.id;
+            word.updatedAt = timestamp;
+          });
+          await decksTable.delete(deck.id);
+        }
+      });
   }
 }
 
@@ -175,9 +224,11 @@ export async function ensureDefaultDeck(
   learningSetupId: string,
   baseLanguage: LanguageCode = defaultBaseLanguage
 ): Promise<Deck> {
-  const existing = await db.decks.where("learningSetupId").equals(learningSetupId).first();
-  if (existing) {
-    return existing;
+  const existingDecks = await db.decks.where("learningSetupId").equals(learningSetupId).toArray();
+  const defaultName = defaultDeckNames[baseLanguage];
+  const existingDefault = existingDecks.find((deck) => deck.name === defaultName);
+  if (existingDefault) {
+    return existingDefault;
   }
 
   const timestamp = nowIso();
@@ -234,21 +285,58 @@ export function createInitialCardState(
 
 export async function deleteDeckWithWords(deckId: string, mode: "delete" | "reassign", targetDeckId?: string): Promise<void> {
   await db.transaction("rw", db.decks, db.words, db.cards, async () => {
-    const words = await db.words.where("deckId").equals(deckId).toArray();
+    const allWords = await db.words.toArray();
+    const words = allWords.filter((word) => wordDeckIds(word).includes(deckId));
+    const timestamp = nowIso();
 
     if (mode === "delete") {
-      const wordIds = words.map((word) => word.id);
-      await db.words.bulkDelete(wordIds);
+      const wordsToDelete: WordEntry[] = [];
+      const wordsToKeep: WordEntry[] = [];
+
+      words.forEach((word) => {
+        if (wordDeckIds(word).length <= 1) {
+          wordsToDelete.push(word);
+        } else {
+          wordsToKeep.push(word);
+        }
+      });
+
+      const wordIds = wordsToDelete.map((word) => word.id);
       if (wordIds.length > 0) {
+        await db.words.bulkDelete(wordIds);
         const cards = await db.cards.where("wordId").anyOf(wordIds).toArray();
         await db.cards.bulkDelete(cards.map((card) => card.id));
       }
+
+      await Promise.all(
+        wordsToKeep.map((word) => {
+          const nextDeckIds = wordDeckIds(word).filter((candidate) => candidate !== deckId);
+          return db.words.update(word.id, {
+            deckId: word.deckId === deckId ? nextDeckIds[0] : word.deckId,
+            deckIds: nextDeckIds,
+            updatedAt: timestamp
+          });
+        })
+      );
     } else if (targetDeckId) {
-      await Promise.all(words.map((word) => db.words.update(word.id, { deckId: targetDeckId, updatedAt: nowIso() })));
+      await Promise.all(
+        words.map((word) => {
+          const nextDeckIds = Array.from(new Set([...wordDeckIds(word).filter((candidate) => candidate !== deckId), targetDeckId]));
+          return db.words.update(word.id, {
+            deckId: word.deckId === deckId ? targetDeckId : word.deckId,
+            deckIds: nextDeckIds,
+            updatedAt: timestamp
+          });
+        })
+      );
     }
 
     await db.decks.delete(deckId);
   });
+}
+
+function wordDeckIds(word: WordEntry): string[] {
+  return Array.from(new Set([...(word.deckIds ?? []), word.deckId].filter(Boolean)));
 }
 
 export async function deleteLearningSetup(setupId: string): Promise<void> {

@@ -19,7 +19,7 @@ import {
   Volume2,
   X
 } from "lucide-react";
-import { FormEvent, ChangeEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { FormEvent, ChangeEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type CardDirection,
@@ -41,6 +41,7 @@ import {
 import {
   activeProfileStorageKey,
   cardDirections,
+  defaultDeckNames,
   languageNames,
   myMemoryDailyLimit,
   ratings
@@ -426,21 +427,16 @@ export default function App() {
             </div>
             <div className="desktop-meta-controls">
             <HeaderSelect label={t("profile.label")} tooltip={t("profile.switch")}>
-                <select
-                  className="app-input"
+                <AppSelect
                   value={activeProfile.id}
-                  aria-label={t("profile.switch")}
-                  onChange={(event) => {
-                    setActiveProfileId(event.target.value);
-                    void refreshAll(event.target.value);
+                  ariaLabel={t("profile.switch")}
+                  tooltip={t("profile.switch")}
+                  options={profiles.map((profile) => ({ value: profile.id, label: profile.name, textValue: profile.name }))}
+                  onChange={(profileId) => {
+                    setActiveProfileId(profileId);
+                    void refreshAll(profileId);
                   }}
-                >
-                  {profiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name}
-                    </option>
-                  ))}
-                </select>
+                />
               </HeaderSelect>
               <div className="desktop-status-row">
                 <UsageBadge usage={usage} compact />
@@ -505,22 +501,17 @@ export default function App() {
             <div className="grid gap-4">
               <section className="app-subpanel grid gap-3 p-3">
                 <HeaderSelect label={t("profile.label")} tooltip={t("profile.switch")}>
-                  <select
-                    className="app-input"
+                  <AppSelect
                     value={activeProfile.id}
-                    aria-label={t("profile.switch")}
-                    onChange={(event) => {
-                      setActiveProfileId(event.target.value);
-                      void refreshAll(event.target.value);
+                    ariaLabel={t("profile.switch")}
+                    tooltip={t("profile.switch")}
+                    options={profiles.map((profile) => ({ value: profile.id, label: profile.name, textValue: profile.name }))}
+                    onChange={(profileId) => {
+                      setActiveProfileId(profileId);
+                      void refreshAll(profileId);
                       setMobileMenuOpen(false);
                     }}
-                  >
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </HeaderSelect>
                 <LearningSetupSelect
                   label={t("setup.label")}
@@ -600,7 +591,6 @@ export default function App() {
               setup={activeSetup}
               decks={decks}
               words={words}
-              subsets={subsets}
               cards={cards}
               onRefresh={refreshAll}
             />
@@ -623,7 +613,6 @@ export default function App() {
               setup={activeSetup}
               decks={decks}
               words={words}
-              subsets={subsets}
               onRefresh={refreshAll}
               onStatus={setStatus}
             />
@@ -774,7 +763,6 @@ function StudyView({
   setup,
   decks,
   words,
-  subsets,
   cards,
   onRefresh
 }: {
@@ -782,7 +770,6 @@ function StudyView({
   setup: LearningSetup;
   decks: Deck[];
   words: WordEntry[];
-  subsets: CustomSubset[];
   cards: CardState[];
   onRefresh: () => Promise<void>;
 }) {
@@ -805,7 +792,7 @@ function StudyView({
   async function startSession(includeFuture = false) {
     await ensureCardsForWords(activePairWords);
     const latestCards = await db.cards.where("profileId").equals(profile.id).toArray();
-    const scopedWords = filterWordsByScope(activePairWords, scope, subsets);
+    const scopedWords = filterWordsByScope(activePairWords, scope);
     const wordMap = new Map(scopedWords.map((word) => [word.id, word]));
     const directions = direction === "mixed" ? cardDirections : [direction];
     const now = new Date();
@@ -917,7 +904,9 @@ function StudyView({
 
   useEffect(() => {
     if (session?.revealed) {
-      nextButtonRef.current?.focus();
+      if (!isCoarsePointer()) {
+        nextButtonRef.current?.focus();
+      }
     }
   }, [session?.revealed, session?.current?.card.id]);
 
@@ -1117,18 +1106,28 @@ function StudyView({
             <input
               className="app-input text-lg"
               value={session.answer}
-              onChange={(event) => setSession({ ...session, answer: event.target.value })}
+              onChange={(event) => {
+                if (!session.revealed) {
+                  setSession({ ...session, answer: event.target.value });
+                }
+              }}
               placeholder={t("study.answerPlaceholder")}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !session.revealed) {
                   event.preventDefault();
                   event.stopPropagation();
                   submitAnswer();
+                } else if (event.key === "Enter" && session.revealed) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void advanceStudyCard();
                 }
               }}
-              disabled={session.revealed}
               ref={answerInputRef}
               autoFocus
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </Label>
           {!session.revealed ? (
@@ -1162,7 +1161,7 @@ function StudyView({
       <div className="app-panel grid gap-3 p-4">
         <p className="app-muted text-sm">{t("study.setupHelp")}</p>
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
-          <ScopeSelect scope={scope} setScope={setScope} decks={decks} subsets={subsets} />
+          <ScopeSelect scope={scope} setScope={setScope} decks={decks} />
           <DirectionPicker value={direction} setup={setup} onChange={setDirection} />
           <DueStatus count={dueCount} />
         </div>
@@ -1210,14 +1209,17 @@ function LibraryView({
 }) {
   const { t, i18n } = useTranslation();
   const confirm = useConfirm();
-  const [form, setForm] = useState<WordFormState>(() => ({ ...emptyWordForm, deckId: decks[0]?.id ?? "" }));
+  const [form, setForm] = useState<WordFormState>(() => ({ ...emptyWordForm, deckId: preferredLibraryDeckId(decks, setup.baseLanguage) }));
+  const [addWordPanelOpen, setAddWordPanelOpen] = useState(false);
+  const [editingWord, setEditingWord] = useState<WordEntry | null>(null);
+  const [editForm, setEditForm] = useState<WordFormState>({ ...emptyWordForm });
+  const [editFormSubmitted, setEditFormSubmitted] = useState(false);
   const [suggestions, setSuggestions] = useState<TranslationResult[]>([]);
   const [fetching, setFetching] = useState(false);
   const [lastAutoSuggestedText, setLastAutoSuggestedText] = useState("");
   const [query, setQuery] = useState("");
   const [deckFilter, setDeckFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<ReviewStatus>("all");
-  const [showWordDetails, setShowWordDetails] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [wordPage, setWordPage] = useState(1);
   const [wordsPerPage, setWordsPerPage] = useState(10);
@@ -1232,19 +1234,18 @@ function LibraryView({
       return undefined;
     }
 
-    return words.find((word) => word.id !== form.id && normalizeDuplicateText(word.targetText) === candidate);
-  }, [form.id, form.targetText, words]);
+    return words.find((word) => normalizeDuplicateText(word.targetText) === candidate);
+  }, [form.targetText, words]);
 
   useEffect(() => {
-    if (!form.deckId && decks[0]) {
-      setForm((current) => ({ ...current, deckId: decks[0].id }));
+    if (!decks.some((deck) => deck.id === form.deckId)) {
+      setForm((current) => ({ ...current, deckId: preferredLibraryDeckId(decks, setup.baseLanguage) }));
     }
-  }, [decks, form.deckId]);
+  }, [decks, form.deckId, setup.baseLanguage]);
 
   useEffect(() => {
     const text = form.targetText.trim();
     if (
-      form.id ||
       text.length < 2 ||
       form.translations.trim() ||
       fetching ||
@@ -1259,13 +1260,13 @@ function LibraryView({
     }, 800);
 
     return () => window.clearTimeout(timeoutId);
-  }, [fetching, form.id, form.targetText, form.translations, lastAutoSuggestedText, translationLimitReached]);
+  }, [fetching, form.targetText, form.translations, lastAutoSuggestedText, translationLimitReached]);
 
   const cardByWord = useMemo(() => groupCardsByWord(cards), [cards]);
   const filteredWords = useMemo(() => words.filter((word) => {
     const haystack = `${word.targetText} ${word.translations.join(" ")} ${word.notes}`.toLocaleLowerCase();
     const matchesQuery = !query || haystack.includes(query.toLocaleLowerCase());
-    const matchesDeck = deckFilter === "all" || word.deckId === deckFilter;
+    const matchesDeck = deckFilter === "all" || wordDeckIds(word).includes(deckFilter);
     const wordCards = cardByWord.get(word.id) ?? [];
     const matchesStatus =
       statusFilter === "all" ||
@@ -1282,6 +1283,16 @@ function LibraryView({
   const pagedWords = filteredWords.slice((safeWordPage - 1) * wordsPerPage, safeWordPage * wordsPerPage);
   const targetMissing = wordFormSubmitted && !form.targetText.trim();
   const translationsMissing = wordFormSubmitted && splitTranslations(form.translations).length === 0;
+  const editTargetMissing = editFormSubmitted && !editForm.targetText.trim();
+  const editTranslationsMissing = editFormSubmitted && splitTranslations(editForm.translations).length === 0;
+  const editDuplicateWord = useMemo(() => {
+    const candidate = normalizeDuplicateText(editForm.targetText);
+    if (!candidate || !editingWord) {
+      return undefined;
+    }
+
+    return words.find((word) => word.id !== editingWord.id && normalizeDuplicateText(word.targetText) === candidate);
+  }, [editForm.targetText, editingWord, words]);
 
   useEffect(() => {
     setWordPage(1);
@@ -1368,33 +1379,23 @@ function LibraryView({
     }
 
     const timestamp = nowIso();
-    if (form.id) {
-      await db.words.update(form.id, {
-        targetText: form.targetText.trim(),
-        translations,
-        notes: form.notes.trim(),
-        deckId: form.deckId,
-        updatedAt: timestamp
-      });
-    } else {
-      const word: WordEntry = {
-        id: createId("word"),
-        profileId: profile.id,
-        learningSetupId: setup.id,
-        deckId: form.deckId,
-        targetText: form.targetText.trim(),
-        translations,
-        notes: form.notes.trim(),
-        createdAt: timestamp,
-        updatedAt: timestamp
-      };
-      await db.words.add(word);
-      await ensureCardsForWords([word]);
-    }
+    const word: WordEntry = {
+      id: createId("word"),
+      profileId: profile.id,
+      learningSetupId: setup.id,
+      deckId: form.deckId,
+      deckIds: [form.deckId],
+      targetText: form.targetText.trim(),
+      translations,
+      notes: form.notes.trim(),
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    await db.words.add(word);
+    await ensureCardsForWords([word]);
 
-    setForm({ ...emptyWordForm, deckId: decks[0]?.id ?? "" });
+    setForm({ ...emptyWordForm, deckId: form.deckId });
     setSuggestions([]);
-    setShowWordDetails(false);
     setWordFormSubmitted(false);
     onStatus(t("status.saved"));
     await onRefresh();
@@ -1412,67 +1413,104 @@ function LibraryView({
       return;
     }
 
-    await db.transaction("rw", db.words, db.cards, db.subsets, async () => {
+    await db.transaction("rw", db.words, db.cards, async () => {
       await db.words.delete(word.id);
       const wordCards = await db.cards.where("wordId").equals(word.id).toArray();
       await db.cards.bulkDelete(wordCards.map((card) => card.id));
-      const affectedSubsets = await db.subsets.where("profileId").equals(profile.id).toArray();
-      await Promise.all(
-        affectedSubsets.map((subset) =>
-          db.subsets.update(subset.id, {
-            wordIds: subset.wordIds.filter((wordId) => wordId !== word.id),
-            updatedAt: nowIso()
-          })
-        )
-      );
     });
     onStatus(t("status.deleted"));
     await onRefresh();
   }
 
   function resetWordForm() {
-    setForm({ ...emptyWordForm, deckId: decks[0]?.id ?? "" });
+    setForm({ ...emptyWordForm, deckId: form.deckId || preferredLibraryDeckId(decks, setup.baseLanguage) });
     setSuggestions([]);
-    setShowWordDetails(false);
     setWordFormSubmitted(false);
   }
 
   function editWord(word: WordEntry) {
-    setForm({
-      id: word.id,
+    setEditingWord(word);
+    setEditForm({
       targetText: word.targetText,
       translations: word.translations.join("; "),
       notes: word.notes,
       deckId: word.deckId
     });
-    setSuggestions([]);
-    setShowWordDetails(true);
-    setWordFormSubmitted(false);
+    setEditFormSubmitted(false);
+  }
+
+  function closeEditModal() {
+    setEditingWord(null);
+    setEditForm({ ...emptyWordForm });
+    setEditFormSubmitted(false);
+  }
+
+  async function updateWord(event: FormEvent) {
+    event.preventDefault();
+    if (!editingWord) {
+      return;
+    }
+
+    setEditFormSubmitted(true);
+    const translations = splitTranslations(editForm.translations);
+    if (!editForm.targetText.trim() || translations.length === 0 || !editForm.deckId) {
+      return;
+    }
+
+    if (editDuplicateWord) {
+      const addDuplicate = await confirm({
+        title: t("library.duplicateTitle"),
+        message: t("library.duplicateBody", { word: editDuplicateWord.targetText }),
+        confirmLabel: t("library.addDuplicate"),
+        cancelLabel: t("common.cancel")
+      });
+      if (!addDuplicate) {
+        return;
+      }
+    }
+
+    await db.words.update(editingWord.id, {
+      targetText: editForm.targetText.trim(),
+      translations,
+      notes: editForm.notes.trim(),
+      deckId: editForm.deckId,
+      deckIds: mergeDeckIds(editingWord.deckIds, editForm.deckId),
+      updatedAt: nowIso()
+    });
+    closeEditModal();
+    onStatus(t("status.saved"));
+    await onRefresh();
   }
 
   return (
     <section className="grid gap-4">
       <ViewTitle title={t("library.title")} />
       <form className="app-panel grid gap-3 p-4" onSubmit={saveWord} noValidate>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-0">
-            <h2 className="app-heading text-base font-semibold">{form.id ? t("common.edit") : t("library.addWord")}</h2>
-            {form.id ? <p className="app-subtle truncate text-xs">{form.targetText}</p> : null}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {form.id ? (
-              <button className="app-button app-button-ghost" type="button" onClick={resetWordForm} data-tooltip={t("common.cancel")}>
-                {t("common.cancel")}
-              </button>
-            ) : null}
-            <button className="app-button app-button-ghost" type="button" onClick={() => setShowWordDetails((visible) => !visible)} data-tooltip={t("common.details")}>
-              <Settings size={16} />
-              {t("common.details")}
-            </button>
-          </div>
-        </div>
+        <button
+          className="flex w-full items-center justify-between gap-3 rounded-xl px-1 py-1.5 text-left transition hover:bg-[var(--dropdown-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          type="button"
+          aria-label={addWordPanelOpen ? t("common.collapse") : t("common.expand")}
+          aria-expanded={addWordPanelOpen}
+          onClick={() => setAddWordPanelOpen((open) => !open)}
+          data-tooltip={addWordPanelOpen ? t("common.collapse") : t("common.expand")}
+        >
+          <span className="min-w-0">
+            <h2 className="app-heading text-base font-semibold">{t("library.addWord")}</h2>
+            <p className="app-subtle truncate text-xs">{decks.find((deck) => deck.id === form.deckId)?.name ?? defaultDeckNames[setup.baseLanguage]}</p>
+          </span>
+          <span className="library-panel-toggle pointer-events-none">
+            <ChevronRight className={`shrink-0 transition-transform ${addWordPanelOpen ? "rotate-90" : ""}`} size={18} />
+          </span>
+        </button>
 
-        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+        {addWordPanelOpen ? (
+          <div className="app-expand grid gap-3">
+        <div className="flex items-center justify-end">
+          <button className="app-button app-button-ghost app-button-compact" type="button" onClick={resetWordForm} data-tooltip={t("common.reset")}>
+            {t("common.reset")}
+          </button>
+        </div>
+        <div className="grid gap-2">
           <Label
             text={
               <span className="flex items-center gap-1">
@@ -1548,9 +1586,28 @@ function LibraryView({
             />
             {translationsMissing ? <span className="app-warning-text text-xs">{t("library.translationsRequired")}</span> : null}
           </Label>
-          <button className="app-button app-button-primary" type="submit" data-tooltip={form.id ? t("common.save") : t("common.add")}>
+        </div>
+
+        <div className="library-capture-options">
+          <AppSelect
+            label={t("common.deck")}
+            value={form.deckId}
+            compact
+            options={decks.map((deck) => ({ value: deck.id, label: deck.name, textValue: deck.name }))}
+            onChange={(deckId) => setForm({ ...form, deckId })}
+          />
+          <Label text={`${t("common.notes")} (${t("common.optional")})`}>
+            <textarea
+              className="app-input library-note-input"
+              value={form.notes}
+              onChange={(event) => setForm({ ...form, notes: event.target.value })}
+              placeholder={t("library.notesPlaceholder")}
+              autoCapitalize="sentences"
+            />
+          </Label>
+          <button className="app-button app-button-primary" type="submit" data-tooltip={t("common.add")}>
             <Plus size={18} />
-            {form.id ? t("common.save") : t("common.add")}
+            {t("common.add")}
           </button>
         </div>
 
@@ -1570,29 +1627,91 @@ function LibraryView({
           </span>
         </div>
 
-        {showWordDetails ? (
-          <div className="app-subpanel app-expand grid gap-3 p-3 md:grid-cols-[16rem_minmax(0,1fr)]">
-            <Label text={t("common.deck")}>
-              <select className="app-input" value={form.deckId} onChange={(event) => setForm({ ...form, deckId: event.target.value })}>
-                {decks.map((deck) => (
-                  <option key={deck.id} value={deck.id}>
-                    {deck.name}
-                  </option>
-                ))}
-              </select>
-            </Label>
-            <Label text={`${t("common.notes")} (${t("common.optional")})`}>
-              <textarea
-                className="app-input min-h-20"
-                value={form.notes}
-                onChange={(event) => setForm({ ...form, notes: event.target.value })}
-                placeholder={t("library.notesPlaceholder")}
-              />
-            </Label>
           </div>
         ) : null}
-
       </form>
+
+      {editingWord ? (
+        <div className="modal-overlay" role="presentation">
+          <form className="edit-word-modal" onSubmit={updateWord} noValidate role="dialog" aria-modal="true" aria-labelledby="edit-word-title">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 id="edit-word-title" className="app-heading text-lg font-bold">{t("common.edit")}</h2>
+                <p className="app-subtle truncate text-xs">{editingWord.targetText}</p>
+              </div>
+              <button className="app-button app-button-secondary app-icon-button" type="button" onClick={closeEditModal} aria-label={t("common.cancel")} data-tooltip={t("common.cancel")}>
+                <X size={17} />
+              </button>
+            </div>
+            <Label
+              text={
+                <span className="flex items-center gap-1">
+                  <FlagIcon code={setup.targetLanguage} />
+                  {t("library.targetText")}
+                </span>
+              }
+            >
+              <input
+                className={`app-input ${editDuplicateWord || editTargetMissing ? "app-input-warning" : ""}`}
+                value={editForm.targetText}
+                onChange={(event) => setEditForm({ ...editForm, targetText: event.target.value })}
+                placeholder={t("library.targetPlaceholder")}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-invalid={editTargetMissing}
+                autoFocus
+              />
+              {editTargetMissing ? <span className="app-warning-text text-xs">{t("library.targetRequired")}</span> : null}
+              {editDuplicateWord ? <span className="app-warning-text text-xs">{t("library.duplicateInline")}</span> : null}
+            </Label>
+            <Label
+              text={
+                <span className="flex items-center gap-1">
+                  <FlagIcon code={setup.baseLanguage} />
+                  {t("common.translations")}
+                </span>
+              }
+            >
+              <input
+                className={`app-input ${editTranslationsMissing ? "app-input-warning" : ""}`}
+                value={editForm.translations}
+                onChange={(event) => setEditForm({ ...editForm, translations: event.target.value })}
+                placeholder={t("library.translationHint")}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-invalid={editTranslationsMissing}
+              />
+              {editTranslationsMissing ? <span className="app-warning-text text-xs">{t("library.translationsRequired")}</span> : null}
+            </Label>
+            <div className="grid gap-3 sm:grid-cols-[14rem_minmax(0,1fr)]">
+            <AppSelect
+              label={t("common.deck")}
+              value={editForm.deckId}
+              options={decks.map((deck) => ({ value: deck.id, label: deck.name, textValue: deck.name }))}
+              onChange={(deckId) => setEditForm({ ...editForm, deckId })}
+            />
+              <Label text={`${t("common.notes")} (${t("common.optional")})`}>
+                <textarea
+                  className="app-input min-h-20"
+                  value={editForm.notes}
+                  onChange={(event) => setEditForm({ ...editForm, notes: event.target.value })}
+                  placeholder={t("library.notesPlaceholder")}
+                />
+              </Label>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button className="app-button app-button-ghost" type="button" onClick={closeEditModal}>
+                {t("common.cancel")}
+              </button>
+              <button className="app-button app-button-primary" type="submit">
+                {t("common.save")}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       <div className="app-panel grid gap-3 p-4">
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
@@ -1614,24 +1733,26 @@ function LibraryView({
         </div>
         {showFilters ? (
           <div className="app-divider app-expand grid gap-3 border-t pt-3 md:grid-cols-2">
-          <Label text={t("common.deck")}>
-            <select className="app-input" value={deckFilter} onChange={(event) => setDeckFilter(event.target.value)}>
-              <option value="all">{t("common.all")}</option>
-              {decks.map((deck) => (
-                <option key={deck.id} value={deck.id}>
-                  {deck.name}
-                </option>
-              ))}
-            </select>
-          </Label>
-          <Label text={t("library.reviewStatus")}>
-            <select className="app-input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as ReviewStatus)}>
-              <option value="all">{t("common.all")}</option>
-              <option value="due">{t("common.due")}</option>
-              <option value="new">{t("common.new")}</option>
-              <option value="learned">{t("common.learned")}</option>
-            </select>
-          </Label>
+          <AppSelect
+            label={t("common.deck")}
+            value={deckFilter}
+            options={[
+              { value: "all", label: t("common.all"), textValue: t("common.all") },
+              ...decks.map((deck) => ({ value: deck.id, label: deck.name, textValue: deck.name }))
+            ]}
+            onChange={setDeckFilter}
+          />
+          <AppSelect
+            label={t("library.reviewStatus")}
+            value={statusFilter}
+            options={[
+              { value: "all", label: t("common.all"), textValue: t("common.all") },
+              { value: "due", label: t("common.due"), textValue: t("common.due") },
+              { value: "new", label: t("common.new"), textValue: t("common.new") },
+              { value: "learned", label: t("common.learned"), textValue: t("common.learned") }
+            ]}
+            onChange={(value) => setStatusFilter(value as ReviewStatus)}
+          />
           </div>
         ) : null}
       </div>
@@ -1649,20 +1770,23 @@ function LibraryView({
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <label className="app-subtle flex items-center gap-2 text-xs font-semibold">
+            <div className="app-subtle flex items-center gap-2 text-xs font-semibold">
               <span className="sr-only">{t("library.pageSize")}</span>
-              <select
-                className="app-input app-input-compact w-20"
-                value={wordsPerPage}
-                onChange={(event) => setWordsPerPage(Number(event.target.value))}
-                aria-label={t("library.pageSize")}
-                data-tooltip={t("library.pageSizeHint")}
-              >
-                {libraryPageSizeOptions.map((pageSize) => (
-                  <option key={pageSize} value={pageSize}>{pageSize}</option>
-                ))}
-              </select>
-            </label>
+              <div className="w-20">
+              <AppSelect
+                compact
+                value={String(wordsPerPage)}
+                ariaLabel={t("library.pageSize")}
+                tooltip={t("library.pageSizeHint")}
+                options={libraryPageSizeOptions.map((pageSize) => ({
+                  value: String(pageSize),
+                  label: String(pageSize),
+                  textValue: String(pageSize)
+                }))}
+                onChange={(value) => setWordsPerPage(Number(value))}
+              />
+              </div>
+            </div>
             {wordPager}
           </div>
         </div>
@@ -1689,7 +1813,9 @@ function LibraryView({
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
-                  <span className="app-chip">{decks.find((deck) => deck.id === word.deckId)?.name ?? t("common.deck")}</span>
+                  {wordDeckIds(word).map((deckId) => (
+                    <span key={deckId} className="app-chip">{decks.find((deck) => deck.id === deckId)?.name ?? t("common.deck")}</span>
+                  ))}
                   <span className="app-chip">{formatLastReviewed(cardByWord.get(word.id), t("library.lastReviewed"), profile.uiLanguage)}</span>
                 </div>
                 {word.notes ? <p className="app-subtle mt-1.5 text-xs leading-relaxed">{word.notes}</p> : null}
@@ -1712,7 +1838,6 @@ function DecksView({
   setup,
   decks,
   words,
-  subsets,
   onRefresh,
   onStatus
 }: {
@@ -1720,16 +1845,28 @@ function DecksView({
   setup: LearningSetup;
   decks: Deck[];
   words: WordEntry[];
-  subsets: CustomSubset[];
   onRefresh: () => Promise<void>;
   onStatus: (message: string) => void;
 }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const [deckName, setDeckName] = useState("");
-  const [editingSubsetId, setEditingSubsetId] = useState<string | null>(null);
-  const [subsetName, setSubsetName] = useState("");
+  const [createToolsOpen, setCreateToolsOpen] = useState(false);
+  const [renamingDeck, setRenamingDeck] = useState<Deck | null>(null);
+  const [renameDeckName, setRenameDeckName] = useState("");
   const [selectedWordIds, setSelectedWordIds] = useState<string[]>([]);
+  const [deckWordSearch, setDeckWordSearch] = useState("");
+  const filteredDeckWords = useMemo(() => {
+    const query = deckWordSearch.trim().toLocaleLowerCase();
+    if (!query) {
+      return words;
+    }
+
+    return words.filter((word) => {
+      const searchable = [word.targetText, word.translations.join(" "), word.notes].join(" ").toLocaleLowerCase();
+      return searchable.includes(query);
+    });
+  }, [deckWordSearch, words]);
 
   async function addDeck(event: FormEvent) {
     event.preventDefault();
@@ -1738,26 +1875,56 @@ function DecksView({
     }
 
     const timestamp = nowIso();
-    await db.decks.add({
+    const deck: Deck = {
       id: createId("deck"),
       profileId: profile.id,
       learningSetupId: setup.id,
       name: deckName.trim(),
       createdAt: timestamp,
       updatedAt: timestamp
+    };
+
+    await db.transaction("rw", db.decks, db.words, async () => {
+      await db.decks.add(deck);
+      await Promise.all(
+        selectedWordIds.map(async (wordId) => {
+          const word = await db.words.get(wordId);
+          if (!word) {
+            return;
+          }
+          await db.words.update(wordId, {
+            deckIds: mergeDeckIds(word.deckIds ?? [word.deckId], deck.id),
+            updatedAt: timestamp
+          });
+        })
+      );
     });
     setDeckName("");
+    setSelectedWordIds([]);
+    setDeckWordSearch("");
     onStatus(t("status.saved"));
     await onRefresh();
   }
 
-  async function renameDeck(deck: Deck) {
-    const name = window.prompt(t("decks.deckName"), deck.name);
-    if (!name?.trim()) {
+  function renameDeck(deck: Deck) {
+    setRenamingDeck(deck);
+    setRenameDeckName(deck.name);
+  }
+
+  function closeDeckRenameModal() {
+    setRenamingDeck(null);
+    setRenameDeckName("");
+  }
+
+  async function submitDeckRename(event: FormEvent) {
+    event.preventDefault();
+    if (!renamingDeck || !renameDeckName.trim()) {
       return;
     }
 
-    await db.decks.update(deck.id, { name: name.trim(), updatedAt: nowIso() });
+    await db.decks.update(renamingDeck.id, { name: renameDeckName.trim(), updatedAt: nowIso() });
+    closeDeckRenameModal();
+    onStatus(t("status.saved"));
     await onRefresh();
   }
 
@@ -1773,7 +1940,7 @@ function DecksView({
       return;
     }
 
-    const deckWords = words.filter((word) => word.deckId === deck.id);
+    const deckWords = words.filter((word) => wordDeckIds(word).includes(deck.id));
     const otherDeck = decks.find((candidate) => candidate.id !== deck.id);
 
     if (deckWords.length > 0 && otherDeck) {
@@ -1792,160 +1959,130 @@ function DecksView({
     await onRefresh();
   }
 
-  async function addSubset(event: FormEvent) {
-    event.preventDefault();
-    if (!subsetName.trim() || selectedWordIds.length === 0) {
-      return;
-    }
-
-    const timestamp = nowIso();
-    if (editingSubsetId) {
-      await db.subsets.update(editingSubsetId, {
-        name: subsetName.trim(),
-        wordIds: selectedWordIds,
-        updatedAt: timestamp
-      });
-    } else {
-      await db.subsets.add({
-        id: createId("subset"),
-        profileId: profile.id,
-        learningSetupId: setup.id,
-        name: subsetName.trim(),
-        wordIds: selectedWordIds,
-        createdAt: timestamp,
-        updatedAt: timestamp
-      });
-    }
-
-    setEditingSubsetId(null);
-    setSubsetName("");
+  function resetDeckCreation() {
+    setDeckName("");
     setSelectedWordIds([]);
-    onStatus(t("status.saved"));
-    await onRefresh();
-  }
-
-  function editSubset(subset: CustomSubset) {
-    setEditingSubsetId(subset.id);
-    setSubsetName(subset.name);
-    setSelectedWordIds(subset.wordIds);
-  }
-
-  function cancelSubsetEdit() {
-    setEditingSubsetId(null);
-    setSubsetName("");
-    setSelectedWordIds([]);
-  }
-
-  async function deleteSubset(subset: CustomSubset) {
-    const confirmed = await confirm({
-      title: t("common.confirmDeleteTitle"),
-      message: `${t("common.confirmDelete")}\n\n${subset.name}`,
-      confirmLabel: t("common.delete"),
-      cancelLabel: t("common.cancel"),
-      variant: "danger"
-    });
-    if (!confirmed) {
-      return;
-    }
-
-    await db.subsets.delete(subset.id);
-    onStatus(t("status.deleted"));
-    await onRefresh();
+    setDeckWordSearch("");
   }
 
   return (
     <section className="grid gap-4">
       <ViewTitle title={t("decks.title")} />
-      <div className="grid gap-4 lg:grid-cols-2">
-        <form className="app-panel grid gap-2 p-3" onSubmit={addDeck}>
-          <h2 className="app-heading text-sm font-semibold">{t("decks.createDeck")}</h2>
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-            <Label text={t("decks.deckName")}>
-              <input className="app-input app-input-compact" value={deckName} onChange={(event) => setDeckName(event.target.value)} placeholder={t("decks.deckNamePlaceholder")} />
-            </Label>
-            <button className="app-button app-button-primary app-button-compact w-fit" type="submit" data-tooltip={t("decks.createDeck")}>
-              <Plus size={16} />
-              {t("common.create")}
-            </button>
-          </div>
-        </form>
+      {renamingDeck ? (
+        <RenameModal
+          title={t("common.rename")}
+          label={t("decks.deckName")}
+          value={renameDeckName}
+          placeholder={t("decks.deckNamePlaceholder")}
+          description={renamingDeck.name}
+          onChange={setRenameDeckName}
+          onCancel={closeDeckRenameModal}
+          onSubmit={submitDeckRename}
+        />
+      ) : null}
+      <div className="app-panel grid gap-3 p-3">
+        <button
+          className="flex w-full items-center justify-between gap-3 rounded-xl px-1 py-1.5 text-left transition hover:bg-[var(--dropdown-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          type="button"
+          aria-label={createToolsOpen ? t("common.collapse") : t("common.expand")}
+          aria-expanded={createToolsOpen}
+          onClick={() => setCreateToolsOpen((open) => !open)}
+          data-tooltip={createToolsOpen ? t("common.collapse") : t("common.expand")}
+        >
+          <span className="min-w-0">
+            <h2 className="app-heading text-sm font-semibold">{t("decks.createDeck")}</h2>
+            <p className="app-subtle truncate text-xs">
+              {selectedWordIds.length} {t("decks.selectedWords")}
+            </p>
+          </span>
+          <span className="library-panel-toggle pointer-events-none">
+            <ChevronRight className={`shrink-0 transition-transform ${createToolsOpen ? "rotate-90" : ""}`} size={18} />
+          </span>
+        </button>
 
-        <form className="app-panel grid gap-3 p-4" onSubmit={addSubset}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="app-heading text-base font-semibold">{editingSubsetId ? t("decks.editSubset") : t("decks.createSubset")}</h2>
-            <span className="app-chip">{selectedWordIds.length} {t("decks.selectedWords")}</span>
-          </div>
-          <Label text={t("decks.subsetName")}>
-            <input className="app-input" value={subsetName} onChange={(event) => setSubsetName(event.target.value)} placeholder={t("decks.subsetNamePlaceholder")} />
-          </Label>
-          <div className="app-subpanel max-h-56 overflow-auto p-2">
-            {words.length === 0 ? <p className="app-muted p-2 text-sm">{t("library.noWords")}</p> : null}
-            {words.map((word) => (
-              <label key={word.id} className="app-label grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--dropdown-hover-bg)]">
-                <input
-                  type="checkbox"
-                  checked={selectedWordIds.includes(word.id)}
-                  onChange={(event) => {
-                    setSelectedWordIds((current) =>
-                      event.target.checked ? [...current, word.id] : current.filter((wordId) => wordId !== word.id)
-                    );
-                  }}
-                />
-                <span className="truncate">{word.targetText}</span>
-              </label>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button className="app-button app-button-primary" type="submit" disabled={selectedWordIds.length === 0} data-tooltip={editingSubsetId ? t("common.save") : t("decks.createSubset")}>
-              {editingSubsetId ? <Check size={18} /> : <Plus size={18} />}
-              {t("common.save")}
-            </button>
-            {editingSubsetId ? (
-              <button className="app-button app-button-ghost" type="button" onClick={cancelSubsetEdit} data-tooltip={t("common.cancel")}>
-                {t("common.cancel")}
-              </button>
-            ) : null}
-          </div>
-        </form>
+        {createToolsOpen ? (
+          <form className="app-expand app-subpanel grid gap-3 p-3" onSubmit={addDeck}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="app-heading text-sm font-semibold">{t("decks.createDeck")}</h3>
+              <span className="app-chip">{selectedWordIds.length} {t("decks.selectedWords")}</span>
+            </div>
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <Label text={t("decks.deckName")}>
+                  <input className="app-input app-input-compact" value={deckName} onChange={(event) => setDeckName(event.target.value)} placeholder={t("decks.deckNamePlaceholder")} />
+                </Label>
+                <button className="app-button app-button-primary app-button-compact w-fit" type="submit" disabled={!deckName.trim()} data-tooltip={t("decks.createDeck")}>
+                  <Plus size={16} />
+                  {t("decks.createDeck")}
+                </button>
+              </div>
+              <div className="grid gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="app-heading text-sm font-semibold">{t("decks.selectWords")}</h3>
+                  {selectedWordIds.length > 0 ? (
+                    <button className="app-button app-button-ghost app-button-compact" type="button" onClick={resetDeckCreation} data-tooltip={t("common.reset")}>
+                      {t("common.reset")}
+                    </button>
+                  ) : null}
+                </div>
+              <Label text={t("common.search")}>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" size={16} />
+                  <input
+                    className="app-input app-input-compact app-input-with-leading-icon"
+                    value={deckWordSearch}
+                    onChange={(event) => setDeckWordSearch(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                      }
+                    }}
+                    placeholder={t("library.searchPlaceholder")}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                </div>
+              </Label>
+              <div className="app-subpanel max-h-64 overflow-auto p-1.5">
+                {words.length === 0 ? <p className="app-muted p-2 text-sm">{t("library.noWords")}</p> : null}
+                {words.length > 0 && filteredDeckWords.length === 0 ? <p className="app-muted p-2 text-sm">{t("library.noWords")}</p> : null}
+                {filteredDeckWords.map((word) => (
+                  <label key={word.id} className="deck-word-option">
+                    <input
+                      type="checkbox"
+                      checked={selectedWordIds.includes(word.id)}
+                      onChange={(event) => {
+                        setSelectedWordIds((current) =>
+                          event.target.checked ? [...current, word.id] : current.filter((wordId) => wordId !== word.id)
+                        );
+                      }}
+                    />
+                    <span className="min-w-0">
+                      <span className="deck-word-option-target">{word.targetText}</span>
+                      <span className="deck-word-option-translation">{word.translations.join(" / ")}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              </div>
+          </form>
+        ) : null}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-3">
         <div className="grid gap-3">
           {decks.map((deck) => (
             <article key={deck.id} className="app-panel px-3 py-2.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <h3 className="app-heading truncate font-semibold">{deck.name}</h3>
-                  <p className="app-muted text-sm">{words.filter((word) => word.deckId === deck.id).length} {t("common.word")}</p>
+                  <p className="app-muted text-sm">{words.filter((word) => wordDeckIds(word).includes(deck.id)).length} {t("common.word")}</p>
                 </div>
                 <div className="flex shrink-0 gap-1">
                   <button className="app-button app-button-secondary app-icon-button" onClick={() => renameDeck(deck)} aria-label={t("common.rename")} data-tooltip={t("common.rename")}>
                     <Edit2 size={17} />
                   </button>
                   <button className="app-button app-button-danger app-icon-button" onClick={() => deleteDeck(deck)} aria-label={t("common.delete")} data-tooltip={t("common.delete")}>
-                    <Trash2 size={17} />
-                  </button>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-        <div className="grid gap-3">
-          {subsets.length === 0 ? (
-            <div className="app-muted rounded-xl border border-dashed border-[color:var(--border-default)] bg-[var(--subpanel-bg)] p-4">{t("decks.noSubsets")}</div>
-          ) : null}
-          {subsets.map((subset) => (
-            <article key={subset.id} className="app-panel px-3 py-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="app-heading truncate font-semibold">{subset.name}</h3>
-                  <p className="app-muted text-sm">{subset.wordIds.length} {t("decks.selectedWords")}</p>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <button className="app-button app-button-secondary app-icon-button" onClick={() => editSubset(subset)} aria-label={t("common.edit")} data-tooltip={t("common.edit")}>
-                    <Edit2 size={17} />
-                  </button>
-                  <button className="app-button app-button-danger app-icon-button" onClick={() => deleteSubset(subset)} aria-label={t("common.delete")} data-tooltip={t("common.delete")}>
                     <Trash2 size={17} />
                   </button>
                 </div>
@@ -1993,6 +2130,8 @@ function SettingsView({
   const [setupBaseLanguage, setSetupBaseLanguage] = useState<LanguageCode>(activeSetup?.baseLanguage ?? "de");
   const [setupTargetLanguage, setSetupTargetLanguage] = useState<LanguageCode>(activeSetup?.targetLanguage ?? "es");
   const [setupWordCounts, setSetupWordCounts] = useState<Record<string, number>>({});
+  const [renamingSetup, setRenamingSetup] = useState<LearningSetup | null>(null);
+  const [renameSetupName, setRenameSetupName] = useState("");
   const [editingSetupLanguagesId, setEditingSetupLanguagesId] = useState<string | null>(null);
   const [editingBaseLanguage, setEditingBaseLanguage] = useState<LanguageCode>(activeSetup?.baseLanguage ?? "de");
   const [editingTargetLanguage, setEditingTargetLanguage] = useState<LanguageCode>(activeSetup?.targetLanguage ?? "es");
@@ -2068,13 +2207,25 @@ function SettingsView({
     await onRefresh();
   }
 
-  async function renameSetup(setup: LearningSetup) {
-    const name = window.prompt(t("setup.name"), setup.name);
-    if (!name?.trim()) {
+  function renameSetup(setup: LearningSetup) {
+    setRenamingSetup(setup);
+    setRenameSetupName(setup.name);
+  }
+
+  function closeSetupRenameModal() {
+    setRenamingSetup(null);
+    setRenameSetupName("");
+  }
+
+  async function submitSetupRename(event: FormEvent) {
+    event.preventDefault();
+    if (!renamingSetup || !renameSetupName.trim()) {
       return;
     }
 
-    await db.learningSetups.update(setup.id, { name: name.trim(), updatedAt: nowIso() });
+    await db.learningSetups.update(renamingSetup.id, { name: renameSetupName.trim(), updatedAt: nowIso() });
+    closeSetupRenameModal();
+    onStatus(t("status.saved"));
     await onRefresh();
   }
 
@@ -2386,6 +2537,7 @@ function SettingsView({
           profileId: profile.id,
           learningSetupId: activeSetup.id,
           deckId: deck.id,
+          deckIds: [deck.id],
           targetText: row.targetText,
           translations: row.translations,
           notes: row.notes,
@@ -2417,6 +2569,18 @@ function SettingsView({
   return (
     <section className="grid min-w-0 gap-4">
       <ViewTitle title={t("settings.title")} />
+      {renamingSetup ? (
+        <RenameModal
+          title={t("common.rename")}
+          label={t("setup.name")}
+          value={renameSetupName}
+          placeholder={setupNamePlaceholder(renamingSetup.baseLanguage, renamingSetup.targetLanguage, i18n.language, t)}
+          description={learningSetupDisplayName(renamingSetup, i18n.language)}
+          onChange={setRenameSetupName}
+          onCancel={closeSetupRenameModal}
+          onSubmit={submitSetupRename}
+        />
+      ) : null}
       <div className="grid min-w-0 gap-4 lg:grid-cols-2">
         <form className="app-panel grid min-w-0 gap-3 p-4" onSubmit={createAdditionalProfile}>
           <h2 className="app-heading text-base font-semibold">{t("profile.createAnother")}</h2>
@@ -2743,6 +2907,72 @@ function LoadingIndicator({ label }: { label: string }) {
   );
 }
 
+function RenameModal({
+  title,
+  label,
+  value,
+  placeholder,
+  description,
+  onChange,
+  onCancel,
+  onSubmit
+}: {
+  title: string;
+  label: string;
+  value: string;
+  placeholder?: string;
+  description?: string;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onSubmit: (event: FormEvent) => void | Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const titleId = useId();
+
+  return (
+    <div className="modal-overlay" role="presentation">
+      <form className="edit-word-modal" onSubmit={onSubmit} noValidate role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 id={titleId} className="app-heading text-lg font-bold">{title}</h2>
+            {description ? <p className="app-subtle truncate text-xs">{description}</p> : null}
+          </div>
+          <button className="app-button app-button-secondary app-icon-button" type="button" onClick={onCancel} aria-label={t("common.cancel")} data-tooltip={t("common.cancel")}>
+            <X size={17} />
+          </button>
+        </div>
+        <Label text={label}>
+          <input
+            className="app-input"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={placeholder}
+            autoFocus
+            required
+          />
+        </Label>
+        <div className="flex flex-wrap justify-end gap-2">
+          <button className="app-button app-button-ghost" type="button" onClick={onCancel}>
+            {t("common.cancel")}
+          </button>
+          <button className="app-button app-button-primary" type="submit" disabled={!value.trim()}>
+            {t("common.save")}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function preferredLibraryDeckId(decks: Deck[], baseLanguage: LanguageCode): string {
+  const defaultName = defaultDeckNames[baseLanguage];
+  return decks.find((deck) => deck.name === defaultName)?.id ?? decks[0]?.id ?? "";
+}
+
+function isCoarsePointer(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+}
+
 function UsageBadge({ usage, compact = false }: { usage: TranslationUsage | null; compact?: boolean }) {
   const { t } = useTranslation();
   const tooltipId = useId();
@@ -2799,49 +3029,156 @@ function ConnectionBadge({ online, compact = false }: { online: boolean; compact
   );
 }
 
+interface SelectOption {
+  value: string;
+  label: ReactNode;
+  textValue: string;
+}
+
+function AppSelect({
+  label,
+  value,
+  options,
+  onChange,
+  compact = false,
+  ariaLabel,
+  tooltip
+}: {
+  label?: ReactNode;
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+  compact?: boolean;
+  ariaLabel?: string;
+  tooltip?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value) ?? options[0];
+  const selectedIndex = Math.max(0, options.findIndex((option) => option.value === selected?.value));
+
+  function selectByIndex(index: number) {
+    const next = options[index];
+    if (next) {
+      onChange(next.value);
+    }
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setOpen((current) => !current);
+      return;
+    }
+
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      return;
+    }
+
+    event.preventDefault();
+    const lastIndex = options.length - 1;
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? lastIndex
+          : event.key === "ArrowDown"
+            ? Math.min(lastIndex, selectedIndex + 1)
+            : Math.max(0, selectedIndex - 1);
+    selectByIndex(nextIndex);
+    setOpen(true);
+  }
+
+  const control = (
+    <div className="relative min-w-0 max-w-full" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
+      <button
+        className={`app-input flex min-w-0 items-center justify-between gap-2 text-left ${compact ? "app-input-compact min-h-9" : "min-h-10"}`}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        data-tooltip={open ? "" : tooltip}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={handleKeyDown}
+      >
+        <span className="min-w-0 truncate">{selected?.label}</span>
+        <ChevronRight className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} size={compact ? 15 : 16} />
+      </button>
+      <div
+        className={`app-panel dropdown-panel absolute z-40 mt-1 max-h-72 w-full p-1 ${open ? "dropdown-panel-open" : ""}`}
+        role="listbox"
+        aria-hidden={!open}
+      >
+        {options.map((option) => (
+          <button
+            key={option.value}
+            className={`dropdown-option flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-sm ${
+              option.value === selected?.value ? "dropdown-option-active" : ""
+            }`}
+            type="button"
+            role="option"
+            aria-selected={option.value === selected?.value}
+            tabIndex={open ? 0 : -1}
+            onClick={() => {
+              onChange(option.value);
+              setOpen(false);
+            }}
+          >
+            <span className="min-w-0 truncate">{option.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (!label) {
+    return control;
+  }
+
+  return (
+    <div className="app-label grid min-w-0 gap-1 text-sm font-semibold">
+      <span>{label}</span>
+      {control}
+    </div>
+  );
+}
+
 function ScopeSelect({
   scope,
   setScope,
-  decks,
-  subsets
+  decks
 }: {
   scope: ScopeSelection;
   setScope: (scope: ScopeSelection) => void;
   decks: Deck[];
-  subsets: CustomSubset[];
 }) {
   const { t } = useTranslation();
-  const value = scope.type === "all" ? "all" : `${scope.type}:${scope.type === "deck" ? scope.deckId : scope.subsetId}`;
+  const value = scope.type === "all" ? "all" : `deck:${scope.deckId}`;
 
   return (
-    <Label text={t("study.scope")}>
-      <select
-        className="app-input"
-        value={value}
-        onChange={(event) => {
-          const next = event.target.value;
+    <AppSelect
+      label={t("study.scope")}
+      value={value}
+      options={[
+        { value: "all", label: t("common.all"), textValue: t("common.all") },
+        ...decks.map((deck) => ({
+          value: `deck:${deck.id}`,
+          label: `${t("common.deck")}: ${deck.name}`,
+          textValue: `${t("common.deck")}: ${deck.name}`
+        }))
+      ]}
+      onChange={(next) => {
           if (next === "all") {
             setScope({ type: "all" });
           } else if (next.startsWith("deck:")) {
             setScope({ type: "deck", deckId: next.slice(5) });
-          } else {
-            setScope({ type: "subset", subsetId: next.slice(7) });
           }
         }}
-      >
-        <option value="all">{t("common.all")}</option>
-        {decks.map((deck) => (
-          <option key={deck.id} value={`deck:${deck.id}`}>
-            {t("common.deck")}: {deck.name}
-          </option>
-        ))}
-        {subsets.map((subset) => (
-          <option key={subset.id} value={`subset:${subset.id}`}>
-            {t("common.subset")}: {subset.name}
-          </option>
-        ))}
-      </select>
-    </Label>
+    />
   );
 }
 
@@ -3004,11 +3341,13 @@ function LanguageSelect({
         </span>
         <ChevronRight className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} size={16} />
       </button>
-      {open ? (
-        <div
-          className="app-panel absolute z-40 mt-1 max-h-72 w-full overflow-auto p-1"
-          role="listbox"
-        >
+      <div
+        className={`app-panel dropdown-panel absolute z-40 mt-1 max-h-72 w-full overflow-auto p-1 ${
+          open ? "dropdown-panel-open" : ""
+        }`}
+        role="listbox"
+        aria-hidden={!open}
+      >
           {availableCodes.map((code) => (
             <button
               key={code}
@@ -3018,6 +3357,7 @@ function LanguageSelect({
               type="button"
               role="option"
               aria-selected={code === value}
+              tabIndex={open ? 0 : -1}
               onClick={() => {
                 onChange(code);
                 setOpen(false);
@@ -3027,8 +3367,7 @@ function LanguageSelect({
               <span className="truncate">{languageOptionLabel(code, i18n.language)}</span>
             </button>
           ))}
-        </div>
-      ) : null}
+      </div>
     </div>
   );
 }
@@ -3110,13 +3449,13 @@ function CompactLanguageSelect({
         </span>
         <ChevronRight className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} size={iconOnly ? 14 : 15} />
       </button>
-      {open ? (
-        <div
-          className={`app-panel absolute top-full z-40 mt-1 max-h-64 overflow-auto p-1 ${
-            iconOnly ? "right-0 w-56" : "w-full"
-          }`}
-          role="listbox"
-        >
+      <div
+        className={`app-panel dropdown-panel absolute top-full z-40 mt-1 max-h-64 overflow-auto p-1 ${
+          iconOnly ? "right-0 w-56" : "w-full"
+        } ${open ? "dropdown-panel-open" : ""}`}
+        role="listbox"
+        aria-hidden={!open}
+      >
           {languageCodes.map((code) => (
             <button
               key={code}
@@ -3126,6 +3465,7 @@ function CompactLanguageSelect({
               type="button"
               role="option"
               aria-selected={code === value}
+              tabIndex={open ? 0 : -1}
               onClick={() => {
                 onChange(code);
                 setOpen(false);
@@ -3135,8 +3475,7 @@ function CompactLanguageSelect({
               <span className="truncate">{languageOptionLabel(code, i18n.language)}</span>
             </button>
           ))}
-        </div>
-      ) : null}
+      </div>
     </div>
   );
 }
@@ -3291,11 +3630,13 @@ function LearningSetupSelect({
         </span>
         <ChevronRight className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} size={16} />
       </button>
-      {open ? (
-        <div
-          className="app-panel absolute z-40 mt-1 max-h-72 w-full overflow-auto p-1"
-          role="listbox"
-        >
+      <div
+        className={`app-panel dropdown-panel absolute z-40 mt-1 max-h-72 w-full overflow-auto p-1 ${
+          open ? "dropdown-panel-open" : ""
+        }`}
+        role="listbox"
+        aria-hidden={!open}
+      >
           {setups.map((setup) => (
             <button
               key={setup.id}
@@ -3305,6 +3646,7 @@ function LearningSetupSelect({
               type="button"
               role="option"
               aria-selected={setup.id === value}
+              tabIndex={open ? 0 : -1}
               onClick={() => {
                 void onChange(setup.id);
                 setOpen(false);
@@ -3321,8 +3663,7 @@ function LearningSetupSelect({
               </span>
             </button>
           ))}
-        </div>
-      ) : null}
+      </div>
     </div>
   );
 }
@@ -3338,18 +3679,20 @@ function currentNavLabel(view: ViewKey, t: (key: string) => string): string {
   return labels[view];
 }
 
-function filterWordsByScope(words: WordEntry[], scope: ScopeSelection, subsets: CustomSubset[]): WordEntry[] {
+function filterWordsByScope(words: WordEntry[], scope: ScopeSelection): WordEntry[] {
   if (scope.type === "all") {
     return words;
   }
 
-  if (scope.type === "deck") {
-    return words.filter((word) => word.deckId === scope.deckId);
-  }
+  return words.filter((word) => wordDeckIds(word).includes(scope.deckId));
+}
 
-  const subset = subsets.find((candidate) => candidate.id === scope.subsetId);
-  const ids = new Set(subset?.wordIds ?? []);
-  return words.filter((word) => ids.has(word.id));
+function wordDeckIds(word: WordEntry): string[] {
+  return mergeDeckIds(word.deckIds, word.deckId);
+}
+
+function mergeDeckIds(deckIds: string[] | undefined, deckId: string): string[] {
+  return Array.from(new Set([...(deckIds ?? []), deckId].filter(Boolean)));
 }
 
 function defaultRatingForMatch(match: MatchResult, closeAccepted: boolean): ReviewRating {

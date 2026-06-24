@@ -13,10 +13,10 @@ export function Label({ text, children }: { text: ReactNode; children: ReactNode
 
 export function HeaderSelect({ label, children, tooltip }: { label: string; children: ReactNode; tooltip?: string }) {
   return (
-    <label className="app-subtle grid min-w-0 gap-1 text-xs font-semibold uppercase tracking-wide" data-tooltip={tooltip}>
+    <div className="app-subtle grid min-w-0 gap-1 text-xs font-semibold uppercase tracking-wide" data-tooltip={tooltip}>
       <span className="truncate">{label}</span>
       {children}
-    </label>
+    </div>
   );
 }
 

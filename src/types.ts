@@ -45,6 +45,7 @@ export interface WordEntry {
   profileId: string;
   learningSetupId: string;
   deckId: string;
+  deckIds?: string[];
   baseLanguage?: LanguageCode;
   targetLanguage?: LanguageCode;
   targetText: string;
@@ -101,5 +102,4 @@ export interface TranslationResult {
 
 export type ScopeSelection =
   | { type: "all" }
-  | { type: "deck"; deckId: string }
-  | { type: "subset"; subsetId: string };
+  | { type: "deck"; deckId: string };

@@ -99,7 +99,10 @@ export function createCsvExport(words: WordEntry[], decks: Deck[]): string {
     ...words.map((word) => [
       word.targetText,
       word.translations.join("; "),
-      deckNames.get(word.deckId) ?? "",
+      wordDeckIds(word)
+        .map((deckId) => deckNames.get(deckId))
+        .filter(Boolean)
+        .join("; "),
       word.notes,
       word.createdAt,
       word.updatedAt
@@ -107,6 +110,10 @@ export function createCsvExport(words: WordEntry[], decks: Deck[]): string {
   ];
 
   return rows.map((row) => row.map(escapeCsvCell).join(",")).join("\n");
+}
+
+function wordDeckIds(word: WordEntry): string[] {
+  return Array.from(new Set([...(word.deckIds ?? []), word.deckId].filter(Boolean)));
 }
 
 function escapeCsvCell(value: string): string {

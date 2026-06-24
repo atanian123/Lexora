@@ -14,7 +14,7 @@
    - 2.2 [Learning Setups](#22-learning-setups)
    - 2.3 [Word & Phrase Management](#23-word--phrase-management)
    - 2.4 [Translation](#24-translation)
-   - 2.5 [Decks & Subsets](#25-decks--subsets)
+   - 2.5 [Decks](#25-decks)
    - 2.6 [Exercise / Flashcard Mode](#26-exercise--flashcard-mode)
    - 2.7 [Spaced Repetition](#27-spaced-repetition)
    - 2.8 [User Profiles](#28-user-profiles)
@@ -67,9 +67,9 @@
 | FR-07 | A learning setup stores: profile ID, display name, base language, target language, creation date, and updated date. |
 | FR-08 | Exactly one learning setup is active per profile at a time. The user can switch the active setup from the main app UI. |
 | FR-09 | On first launch, after creating a profile, the user must create an initial learning setup before entering the main app. |
-| FR-10 | The user can create, rename, and delete learning setups. Deleting a setup deletes or exports its scoped decks, words, subsets, and SRS progress after confirmation. |
+| FR-10 | The user can create, rename, and delete learning setups. Deleting a setup deletes or exports its scoped decks, words, and SRS progress after confirmation. |
 | FR-11 | A learning setup's base/target languages can be edited only while the setup has no words. Once words exist, the user creates a new setup for a different language pair. This prevents changing the meaning of stored translations and review history. |
-| FR-12 | Learning setup IDs are stable and are used to scope decks, words, subsets, and SRS card state. |
+| FR-12 | Learning setup IDs are stable and are used to scope decks, words, and SRS card state. |
 
 ---
 
@@ -78,10 +78,10 @@
 | ID | Requirement |
 |----|-------------|
 | FR-13 | The user can add a **word or phrase** in the active learning setup's target language. |
-| FR-14 | Each entry stores: learning setup ID, target-language text, one or more accepted base-language translations, optional notes, the deck it belongs to, and SRS metadata. |
+| FR-14 | Each entry stores: learning setup ID, target-language text, one or more accepted base-language translations, optional notes, one or more assigned decks, and SRS metadata. |
 | FR-15 | A word may have **multiple accepted translations**; all are treated as correct during exercise. |
-| FR-16 | The user can **edit** or **delete** any word at any time from the library view. |
-| FR-17 | The library view shows all words in the active setup with their translations, deck, language pair, and last-reviewed date. |
+| FR-16 | The user can **edit** any word in a focused edit dialog and **delete** any word after confirmation from the library view. |
+| FR-17 | The library view shows all words in the active setup with their translations, assigned decks, language pair, and last-reviewed date. |
 | FR-18 | The library supports **search and filter** by deck and review status within the active learning setup. |
 
 ---
@@ -117,16 +117,16 @@ interface TranslationResult {
 
 ---
 
-### 2.5 Decks & Subsets
+### 2.5 Decks
 
 | ID | Requirement |
 |----|-------------|
-| FR-27 | Words are organised into **decks** (e.g. "Travel", "Food", "Work"). A word belongs to exactly one deck. |
+| FR-27 | Words are organised into **decks** (e.g. "Travel", "Food", "Work"). A word can belong to one or more decks. |
 | FR-28 | Decks belong to exactly one learning setup. |
-| FR-29 | A **default deck** is created automatically for each new learning setup. |
-| FR-30 | The user can create, rename, and delete decks. Deleting a deck prompts to reassign or delete its words. |
-| FR-31 | Before starting an exercise session the user selects the **exercise scope**: all words, a specific deck, or a saved custom subset within the active learning setup. |
-| FR-32 | A **custom subset** is a saved, reusable named collection defined by selecting individual words from the active setup's library. Custom subsets can be created, renamed, edited, and deleted by the user. |
+| FR-29 | A regular **default deck** is created automatically for each new learning setup. The add-word flow defaults to this deck and preserves the user's last selected deck while adding multiple words. |
+| FR-30 | The user can create, rename, and delete decks. When creating a deck, the user can select existing words to assign to it. |
+| FR-31 | Deleting a deck removes that deck assignment from words that also belong to other decks. Words assigned only to the deleted deck are either reassigned or deleted after confirmation. |
+| FR-32 | Before starting an exercise session the user selects the **exercise scope**: all words or a specific deck within the active learning setup. |
 
 ---
 
@@ -175,7 +175,7 @@ interface TranslationResult {
 
 | ID | Requirement |
 |----|-------------|
-| FR-53 | The user can export a full Lexora backup as JSON, including profiles, learning setups, decks, words, custom subsets, per-direction SRS card state, and translation usage metadata. |
+| FR-53 | The user can export a full Lexora backup as JSON, including profiles, learning setups, decks, words, per-direction SRS card state, and translation usage metadata. |
 | FR-54 | The user can import a Lexora JSON backup in **merge** mode. Existing records with the same IDs are updated; unrelated local records are preserved. |
 | FR-55 | The user can restore a Lexora JSON backup in **replace** mode after confirmation. This clears local Lexora data on the device and replaces it with the backup contents. |
 | FR-56 | The user can import a CSV word list into the active learning setup. Supported columns include target text, translations, deck, and notes; duplicates by target text in the active setup are skipped. |
@@ -294,7 +294,7 @@ Dexie.js is chosen because it maps cleanly to Dexie Cloud's sync protocol. Addin
 A simple profile switcher (stored in IndexedDB) enables family use without requiring login infrastructure. Phase 2 will introduce proper auth (e.g. email/password or OAuth) with profile migration.
 
 ### AD-06 — Learning setup as the language-pair boundary
-A profile can contain multiple learning setups. Decks, custom subsets, words, and per-direction FSRS cards are scoped to a learning setup rather than directly to the profile. This lets one learner study multiple target/base combinations (for example ES over DE and FR over DE) without mixing libraries or requiring a later schema rewrite.
+A profile can contain multiple learning setups. Decks, words, and per-direction FSRS cards are scoped to a learning setup rather than directly to the profile. This lets one learner study multiple target/base combinations (for example ES over DE and FR over DE) without mixing libraries or requiring a later schema rewrite.
 
 ### AD-07 — App language is independent from study language
 The app UI language is a profile preference and does not have to match the active learning setup's base language. This supports users who prefer the app interface in one language while studying another language pair.
@@ -330,7 +330,7 @@ The following features are explicitly deferred to later phases:
 | OQ-04 | Should decks be shareable between profiles on the same device? | Not in phase 1. Each profile has isolated decks. | ✅ Resolved |
 | OQ-05 | Is a dark mode required for phase 1? | No. Light mode only in phase 1. | ✅ Resolved |
 | OQ-06 | Should SRS scheduling be tracked per word or per card direction? | Per card direction. `target → base` and `base → target` each maintain separate FSRS state. See FR-46. | ✅ Resolved |
-| OQ-07 | Are custom subsets temporary session selections or saved reusable collections? | Saved reusable named collections, editable and deletable by the user. See FR-32. | ✅ Resolved |
+| OQ-07 | Are custom subsets needed as a separate concept from decks? | No. Decks cover reusable word groupings, and words can belong to multiple decks. See FR-27 and FR-30. | ✅ Resolved |
 | OQ-08 | Is MyMemory usage tracked per profile or across profiles? | Across all local profiles on the same browser/device, resetting each local calendar day. See FR-51 and FR-52. | ✅ Resolved |
 | OQ-09 | Should a default profile be created automatically on first launch? | No. The user must create a named local profile before entering the app. See FR-48. | ✅ Resolved |
 | OQ-10 | Should the app language be the same as the base language? | No. App language is a separate profile preference. Learning setups define base and target languages. See FR-01, FR-04, and FR-06. | ✅ Resolved |
@@ -345,9 +345,9 @@ The following features are explicitly deferred to later phases:
 | **Base language** | The language the user already knows for a specific learning setup; accepted translations are stored in this language. |
 | **Target language** | The foreign language the user is learning. |
 | **App language** | The language used for Lexora UI labels, buttons, messages, and settings. It is independent from learning setup languages. |
-| **Learning setup** | A profile-owned study configuration containing a base language, target language, and scoped decks, words, subsets, and SRS progress. |
+| **Learning setup** | A profile-owned study configuration containing a base language, target language, and scoped decks, words, and SRS progress. |
 | **Card direction** | Whether the prompt shown is in the target or base language. |
-| **Deck** | A named group of words, used to organise and scope exercises. |
+| **Deck** | A named reusable group of words, used to organise and scope exercises. A word can belong to multiple decks. |
 | **FSRS** | Free Spaced Repetition Scheduler — the algorithm that determines card review intervals. |
 | **SRS** | Spaced Repetition System — the general technique of reviewing material at increasing intervals. |
 | **Fuzzy matching** | Accepting answers with a 1-character spelling difference (Levenshtein distance = 1) as "close" rather than wrong. |
@@ -368,7 +368,7 @@ Phase 1 targets the complete scope defined in this document. Implementation shou
 |----------|------|----------------|
 | 1. Foundation | Establish the installable local-first application shell. | React 19 + Vite + TypeScript, Tailwind CSS, PWA manifest/service worker, i18next setup, routing/layout, accessibility baseline. |
 | 2. Local data model | Implement durable offline storage and profile/setup boundaries. | Dexie schema/versioning, first-launch profile creation, profile switcher, app-language preference, learning setup CRUD, active setup selection, default deck creation per setup, Dexie Cloud-ready identifiers. |
-| 3. Library management and data portability | Build the core vocabulary management workflow and local migration tools. | Setup-scoped deck CRUD, saved custom subset CRUD, add/edit/delete words and phrases, multiple accepted translations, notes, search/filter, full JSON backup export/import, CSV word import/export, full local reset. |
+| 3. Library management and data portability | Build the core vocabulary management workflow and local migration tools. | Setup-scoped deck CRUD with multi-deck word assignment, add/edit/delete words and phrases, multiple accepted translations, notes, search/filter, full JSON backup export/import, CSV word import/export, full local reset. |
 | 4. Translation layer | Add provider-based translation suggestions with graceful offline fallback. | Translation provider interface, MyMemory provider, local daily request counter shared across profiles, usage indicator, manual translation path. |
 | 5. Exercise engine | Deliver the flashcard study loop. | Scope selection, direction selection, typed answers, 1-character fuzzy matching, close-answer handling, self-rating, pause/abandon, session summary. |
 | 6. FSRS scheduling | Integrate spaced repetition behavior. | `ts-fsrs` integration, per-direction card state, due queues, Again re-queueing, difficult-card surfacing, long-term retention behavior. |

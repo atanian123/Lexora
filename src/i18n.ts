@@ -23,6 +23,8 @@ const en = {
     edit: "Edit",
     rename: "Rename",
     reset: "Reset",
+    expand: "Expand",
+    collapse: "Collapse",
     search: "Search",
     all: "All",
     due: "Due",
@@ -106,7 +108,7 @@ const en = {
     translationsRequired: "Enter at least one accepted translation."
   },
   decks: {
-    title: "Decks and subsets",
+    title: "Decks",
     createDeck: "Create deck",
     deckName: "Deck name",
     deckNamePlaceholder: "e.g. Travel",
@@ -118,6 +120,7 @@ const en = {
     createSubset: "Create subset",
     editSubset: "Edit subset",
     selectedWords: "Selected words",
+    selectWords: "Select existing words",
     noSubsets: "Saved subsets will appear here."
   },
   study: {
@@ -191,9 +194,9 @@ const en = {
     importBackupReplaceWarning: "This replaces all local Lexora data on this device.",
     importCsv: "Import CSV words",
     importCsvHint: "Adds word rows to the active learning setup. Duplicate target words are skipped.",
-    importHelp: "Backups include profiles, learning setups, decks, words, subsets, and review history. CSV import adds words to the active learning setup.",
+    importHelp: "Backups include profiles, learning setups, decks, words, and review history. CSV import adds words to the active learning setup.",
     resetAll: "Delete all local data",
-    resetWarning: "This removes all profiles, decks, words, subsets, and review history from this browser.",
+    resetWarning: "This removes all profiles, decks, words, and review history from this browser.",
     usage: "Translation usage",
     requestsRemaining: "requests remaining"
   },
@@ -263,6 +266,8 @@ const bg = {
     edit: "Редактирай",
     rename: "Преименувай",
     reset: "Нулирай",
+    expand: "Разгъни",
+    collapse: "Свий",
     search: "Търсене",
     all: "Всички",
     due: "За преговор",
@@ -346,7 +351,7 @@ const bg = {
     translationsRequired: "Въведи поне един приет превод."
   },
   decks: {
-    title: "Тестета и подбори",
+    title: "Тестета",
     createDeck: "Създай тесте",
     deckName: "Име на тесте",
     deckNamePlaceholder: "напр. Пътуване",
@@ -358,6 +363,7 @@ const bg = {
     createSubset: "Създай подбор",
     editSubset: "Редактирай подбор",
     selectedWords: "Избрани думи",
+    selectWords: "Избери съществуващи думи",
     noSubsets: "Запазените подбори ще се показват тук."
   },
   study: {
@@ -431,9 +437,9 @@ const bg = {
     importBackupReplaceWarning: "Това заменя всички локални данни на Lexora на това устройство.",
     importCsv: "Импорт CSV думи",
     importCsvHint: "Добавя редове с думи към активната учебна настройка. Дублирани целеви думи се пропускат.",
-    importHelp: "Архивите включват профили, учебни настройки, тестета, думи, подбори и история на преговорите. CSV импортът добавя думи към активната учебна настройка.",
+    importHelp: "Архивите включват профили, учебни настройки, тестета, думи и история на преговорите. CSV импортът добавя думи към активната учебна настройка.",
     resetAll: "Изтрий всички локални данни",
-    resetWarning: "Това премахва всички профили, тестета, думи, подбори и история на преговорите от този браузър.",
+    resetWarning: "Това премахва всички профили, тестета, думи и история на преговорите от този браузър.",
     usage: "Използване на преводи",
     requestsRemaining: "оставащи заявки"
   },
@@ -492,6 +498,8 @@ const de = {
     edit: "Bearbeiten",
     rename: "Umbenennen",
     reset: "Zurücksetzen",
+    expand: "Erweitern",
+    collapse: "Reduzieren",
     search: "Suchen",
     all: "Alle",
     due: "Fällig",
@@ -575,7 +583,7 @@ const de = {
     translationsRequired: "Gib mindestens eine akzeptierte Übersetzung ein."
   },
   decks: {
-    title: "Stapel und Auswahlen",
+    title: "Stapel",
     createDeck: "Stapel erstellen",
     deckName: "Stapelname",
     deckNamePlaceholder: "z. B. Reisen",
@@ -587,6 +595,7 @@ const de = {
     createSubset: "Auswahl erstellen",
     editSubset: "Auswahl bearbeiten",
     selectedWords: "Ausgewählte Wörter",
+    selectWords: "Vorhandene Wörter auswählen",
     noSubsets: "Gespeicherte Auswahlen erscheinen hier."
   },
   study: {
@@ -660,9 +669,9 @@ const de = {
     importBackupReplaceWarning: "Dies ersetzt alle lokalen Lexora-Daten auf diesem Gerät.",
     importCsv: "CSV-Wörter importieren",
     importCsvHint: "Fügt Wortzeilen zur aktiven Lernkonfiguration hinzu. Doppelte Zielwörter werden übersprungen.",
-    importHelp: "Backups enthalten Profile, Lernkonfigurationen, Stapel, Wörter, Auswahlen und Wiederholungsverlauf. CSV-Import fügt Wörter zur aktiven Lernkonfiguration hinzu.",
+    importHelp: "Backups enthalten Profile, Lernkonfigurationen, Stapel, Wörter und Wiederholungsverlauf. CSV-Import fügt Wörter zur aktiven Lernkonfiguration hinzu.",
     resetAll: "Alle lokalen Daten löschen",
-    resetWarning: "Dies entfernt alle Profile, Stapel, Wörter, Auswahlen und Lernverläufe aus diesem Browser.",
+    resetWarning: "Dies entfernt alle Profile, Stapel, Wörter und Lernverläufe aus diesem Browser.",
     usage: "Übersetzungsnutzung",
     requestsRemaining: "Anfragen übrig"
   },
@@ -721,6 +730,8 @@ const fr = {
     edit: "Modifier",
     rename: "Renommer",
     reset: "Réinitialiser",
+    expand: "Développer",
+    collapse: "Réduire",
     search: "Rechercher",
     all: "Tout",
     due: "À réviser",
@@ -804,7 +815,7 @@ const fr = {
     translationsRequired: "Saisissez au moins une traduction acceptée."
   },
   decks: {
-    title: "Paquets et sélections",
+    title: "Paquets",
     createDeck: "Créer un paquet",
     deckName: "Nom du paquet",
     deckNamePlaceholder: "ex. Voyage",
@@ -816,6 +827,7 @@ const fr = {
     createSubset: "Créer une sélection",
     editSubset: "Modifier la sélection",
     selectedWords: "Mots sélectionnés",
+    selectWords: "Sélectionner des mots existants",
     noSubsets: "Les sélections enregistrées apparaîtront ici."
   },
   study: {
@@ -889,9 +901,9 @@ const fr = {
     importBackupReplaceWarning: "Cela remplace toutes les données Lexora locales sur cet appareil.",
     importCsv: "Importer des mots CSV",
     importCsvHint: "Ajoute les lignes de mots à la configuration active. Les mots cibles en double sont ignorés.",
-    importHelp: "Les sauvegardes incluent profils, configurations, paquets, mots, sélections et historique de révision. L'import CSV ajoute des mots à la configuration active.",
+    importHelp: "Les sauvegardes incluent profils, configurations, paquets, mots et historique de révision. L'import CSV ajoute des mots à la configuration active.",
     resetAll: "Supprimer toutes les données locales",
-    resetWarning: "Cela supprime tous les profils, paquets, mots, sélections et historiques de ce navigateur.",
+    resetWarning: "Cela supprime tous les profils, paquets, mots et historiques de ce navigateur.",
     usage: "Utilisation de la traduction",
     requestsRemaining: "requêtes restantes"
   },
@@ -950,6 +962,8 @@ const it = {
     edit: "Modifica",
     rename: "Rinomina",
     reset: "Reimposta",
+    expand: "Espandi",
+    collapse: "Comprimi",
     search: "Cerca",
     all: "Tutti",
     due: "Da ripassare",
@@ -1033,7 +1047,7 @@ const it = {
     translationsRequired: "Inserisci almeno una traduzione accettata."
   },
   decks: {
-    title: "Mazzi e selezioni",
+    title: "Mazzi",
     createDeck: "Crea mazzo",
     deckName: "Nome mazzo",
     deckNamePlaceholder: "es. Viaggi",
@@ -1045,6 +1059,7 @@ const it = {
     createSubset: "Crea selezione",
     editSubset: "Modifica selezione",
     selectedWords: "Parole selezionate",
+    selectWords: "Seleziona parole esistenti",
     noSubsets: "Le selezioni salvate appariranno qui."
   },
   study: {
@@ -1118,9 +1133,9 @@ const it = {
     importBackupReplaceWarning: "Sostituisce tutti i dati Lexora locali su questo dispositivo.",
     importCsv: "Importa parole CSV",
     importCsvHint: "Aggiunge righe di parole al setup attivo. Le parole obiettivo duplicate vengono saltate.",
-    importHelp: "I backup includono profili, setup, mazzi, parole, selezioni e cronologia dei ripassi. L'import CSV aggiunge parole al setup attivo.",
+    importHelp: "I backup includono profili, setup, mazzi, parole e cronologia dei ripassi. L'import CSV aggiunge parole al setup attivo.",
     resetAll: "Elimina tutti i dati locali",
-    resetWarning: "Rimuove tutti i profili, mazzi, parole, selezioni e cronologia da questo browser.",
+    resetWarning: "Rimuove tutti i profili, mazzi, parole e cronologia da questo browser.",
     usage: "Uso traduzioni",
     requestsRemaining: "richieste rimanenti"
   },
@@ -1179,6 +1194,8 @@ const es = {
     edit: "Editar",
     rename: "Renombrar",
     reset: "Restablecer",
+    expand: "Expandir",
+    collapse: "Contraer",
     search: "Buscar",
     all: "Todo",
     due: "Pendiente",
@@ -1262,7 +1279,7 @@ const es = {
     translationsRequired: "Introduce al menos una traducción aceptada."
   },
   decks: {
-    title: "Mazos y selecciones",
+    title: "Mazos",
     createDeck: "Crear mazo",
     deckName: "Nombre del mazo",
     deckNamePlaceholder: "p. ej. Viajes",
@@ -1274,6 +1291,7 @@ const es = {
     createSubset: "Crear selección",
     editSubset: "Editar selección",
     selectedWords: "Palabras seleccionadas",
+    selectWords: "Seleccionar palabras existentes",
     noSubsets: "Las selecciones guardadas aparecerán aquí."
   },
   study: {
@@ -1347,9 +1365,9 @@ const es = {
     importBackupReplaceWarning: "Esto reemplaza todos los datos locales de Lexora en este dispositivo.",
     importCsv: "Importar palabras CSV",
     importCsvHint: "Añade filas de palabras a la configuración activa. Las palabras objetivo duplicadas se omiten.",
-    importHelp: "Las copias incluyen perfiles, configuraciones, mazos, palabras, selecciones e historial de repaso. La importación CSV añade palabras a la configuración activa.",
+    importHelp: "Las copias incluyen perfiles, configuraciones, mazos, palabras e historial de repaso. La importación CSV añade palabras a la configuración activa.",
     resetAll: "Eliminar todos los datos locales",
-    resetWarning: "Esto elimina todos los perfiles, mazos, palabras, selecciones e historial de este navegador.",
+    resetWarning: "Esto elimina todos los perfiles, mazos, palabras e historial de este navegador.",
     usage: "Uso de traducción",
     requestsRemaining: "solicitudes restantes"
   },
@@ -1408,6 +1426,8 @@ const pt = {
     edit: "Editar",
     rename: "Renomear",
     reset: "Repor",
+    expand: "Expandir",
+    collapse: "Recolher",
     search: "Pesquisar",
     all: "Tudo",
     due: "Por rever",
@@ -1491,7 +1511,7 @@ const pt = {
     translationsRequired: "Introduza pelo menos uma tradução aceite."
   },
   decks: {
-    title: "Baralhos e seleções",
+    title: "Baralhos",
     createDeck: "Criar baralho",
     deckName: "Nome do baralho",
     deckNamePlaceholder: "ex. Viagem",
@@ -1503,6 +1523,7 @@ const pt = {
     createSubset: "Criar seleção",
     editSubset: "Editar seleção",
     selectedWords: "Palavras selecionadas",
+    selectWords: "Selecionar palavras existentes",
     noSubsets: "As seleções guardadas aparecerão aqui."
   },
   study: {
@@ -1576,9 +1597,9 @@ const pt = {
     importBackupReplaceWarning: "Isto substitui todos os dados locais do Lexora neste dispositivo.",
     importCsv: "Importar palavras CSV",
     importCsvHint: "Adiciona linhas de palavras à configuração ativa. Palavras alvo duplicadas são ignoradas.",
-    importHelp: "As cópias incluem perfis, configurações, baralhos, palavras, seleções e histórico de revisão. A importação CSV adiciona palavras à configuração ativa.",
+    importHelp: "As cópias incluem perfis, configurações, baralhos, palavras e histórico de revisão. A importação CSV adiciona palavras à configuração ativa.",
     resetAll: "Eliminar todos os dados locais",
-    resetWarning: "Isto remove todos os perfis, baralhos, palavras, seleções e histórico deste navegador.",
+    resetWarning: "Isto remove todos os perfis, baralhos, palavras e histórico deste navegador.",
     usage: "Uso de tradução",
     requestsRemaining: "pedidos restantes"
   },
@@ -1637,6 +1658,8 @@ const ru = {
     edit: "Изменить",
     rename: "Переименовать",
     reset: "Сбросить",
+    expand: "Развернуть",
+    collapse: "Свернуть",
     search: "Поиск",
     all: "Все",
     due: "К повторению",
@@ -1720,7 +1743,7 @@ const ru = {
     translationsRequired: "Введите хотя бы один допустимый перевод."
   },
   decks: {
-    title: "Колоды и наборы",
+    title: "Колоды",
     createDeck: "Создать колоду",
     deckName: "Название колоды",
     deckNamePlaceholder: "например, Путешествия",
@@ -1732,6 +1755,7 @@ const ru = {
     createSubset: "Создать набор",
     editSubset: "Изменить набор",
     selectedWords: "Выбранные слова",
+    selectWords: "Выбрать существующие слова",
     noSubsets: "Сохраненные наборы появятся здесь."
   },
   study: {
@@ -1805,9 +1829,9 @@ const ru = {
     importBackupReplaceWarning: "Это заменит все локальные данные Lexora на этом устройстве.",
     importCsv: "Импорт слов CSV",
     importCsvHint: "Добавляет строки слов в активную настройку. Дубли изучаемых слов пропускаются.",
-    importHelp: "Резервные копии включают профили, настройки, колоды, слова, наборы и историю повторений. CSV-импорт добавляет слова в активную настройку.",
+    importHelp: "Резервные копии включают профили, настройки, колоды, слова и историю повторений. CSV-импорт добавляет слова в активную настройку.",
     resetAll: "Удалить все локальные данные",
-    resetWarning: "Это удалит все профили, колоды, слова, наборы и историю повторений из этого браузера.",
+    resetWarning: "Это удалит все профили, колоды, слова и историю повторений из этого браузера.",
     usage: "Использование перевода",
     requestsRemaining: "запросов осталось"
   },

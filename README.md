@@ -35,7 +35,7 @@ The app UI language is selected per profile and does not need to match the base 
 ## Core Concepts
 
 **Profile**  
-A local learner account on the device. Each profile has its own app language, learning setups, decks, words, subsets, and review progress.
+A local learner account on the device. Each profile has its own app language, learning setups, decks, words, and review progress.
 
 **Learning setup**  
 A study configuration with one base language and one target language. A profile can have multiple setups. Learning data is scoped to the setup so different language pairs do not mix.
@@ -61,7 +61,7 @@ A card scheduled for review now by the spaced-repetition system.
 2. Create an initial learning setup by choosing base and target languages.
 3. Add words or phrases in the Library.
 4. Accept translation suggestions or enter translations manually.
-5. Organize entries into decks or subsets.
+5. Organize entries into one or more decks.
 6. Open Study, choose scope and direction, and start a session.
 7. Type answers, review the result, and continue with Next.
 8. Export a backup or connect Google Drive when moving devices or protecting local data.
@@ -76,13 +76,13 @@ Supported actions:
 - Fetch translation suggestions from MyMemory.
 - Add one or more accepted translations.
 - Add optional notes or context.
-- Assign the entry to a deck.
-- Edit or delete existing entries.
+- Add entries to the default deck, for example `Standard`, or assign them to another deck.
+- Edit existing entries in a focused dialog, or delete them after confirmation.
 - Search words, translations, and notes.
 - Filter by deck and review status.
 - Monitor daily translation usage.
 
-Manual translation entry remains available when offline or when the translation quota is reached.
+Manual translation entry remains available when offline or when the translation quota is reached. The last selected deck is preserved while adding multiple words, so repeated entry into the same deck is fast.
 
 ## Study
 
@@ -90,7 +90,7 @@ The Study screen starts practice sessions from the active learning setup.
 
 Study options:
 
-- **Scope:** all words, one deck, or one saved subset.
+- **Scope:** all words or one deck.
 - **Direction:** target to base, base to target, or mixed.
 - **Due:** cards scheduled for review now.
 - **Practice anyway:** include cards that are not due yet.
@@ -137,7 +137,7 @@ The four ratings affect scheduling:
 Data portability is available from Settings.
 
 **Export backup**  
-Exports a full Lexora JSON backup including profiles, learning setups, decks, words, subsets, card review state, and translation usage metadata.
+Exports a full Lexora JSON backup including profiles, learning setups, decks, words, card review state, and translation usage metadata.
 
 **Import backup**  
 Merges backup data into the current browser data. Existing records with the same IDs are updated, and unrelated local data is preserved.
@@ -220,7 +220,7 @@ For GitHub Pages deployment, add the same value as a repository secret named `VI
 
 Lexora is local-first.
 
-- Profiles, words, decks, subsets, and review history are stored in IndexedDB through Dexie.
+- Profiles, words, decks, and review history are stored in IndexedDB through Dexie.
 - The app shell is cached by the PWA service worker after the first load.
 - Study and library management work offline.
 - Translation suggestions require network access.
