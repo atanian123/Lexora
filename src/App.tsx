@@ -120,7 +120,7 @@ const libraryPageSizeOptions = [10, 25, 50, 100];
 
 function readStoredTheme(): ThemeMode {
   const stored = localStorage.getItem(themeStorageKey);
-  return stored === "light" || stored === "dark" ? stored : "dark";
+  return stored === "light" || stored === "dark" ? stored : "light";
 }
 
 export default function App() {
@@ -353,6 +353,14 @@ export default function App() {
     await refreshAll(activeProfile.id, false);
   }
 
+  if (!activeSetup) {
+    return (
+      <ConfirmationProvider>
+        <SetupRequired profile={activeProfile} onCreated={() => refreshAll(activeProfile.id)} />
+      </ConfirmationProvider>
+    );
+  }
+
   return (
     <ConfirmationProvider>
     <div className="app-shell">
@@ -582,9 +590,6 @@ export default function App() {
 
       <main className="mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-6">
         <div key={`${view}-${activeSetup?.id ?? "none"}`} className="app-view-transition">
-          {!activeSetup && view !== "settings" ? (
-            <SetupRequired profile={activeProfile} onCreated={() => refreshAll(activeProfile.id)} />
-          ) : null}
           {view === "study" && activeSetup ? (
             <StudyView
               profile={activeProfile}
@@ -639,7 +644,7 @@ export default function App() {
   );
 }
 
-function FirstRun({ onCreated }: { onCreated: (profile: Profile) => void }) {
+function FirstRun({ onCreated }: { onCreated: (profile: Profile) => void | Promise<void> }) {
   const { t, i18n } = useTranslation();
   const [name, setName] = useState("");
   const [uiLanguage, setUiLanguage] = useState<LanguageCode>("en");
@@ -655,38 +660,50 @@ function FirstRun({ onCreated }: { onCreated: (profile: Profile) => void }) {
     }
 
     const profile = await createProfile(name, uiLanguage);
-    onCreated(profile);
+    await onCreated(profile);
   }
 
   return (
-    <main className="app-screen flex min-h-dvh items-center justify-center px-4 py-10">
-      <form className="app-panel w-full max-w-xl p-4" onSubmit={handleSubmit}>
-        <div className="mb-6 flex items-center gap-3">
-          <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-12 w-12" />
-          <div>
-            <h1 className="text-xl font-semibold">{t("profile.firstRunTitle")}</h1>
-            <p className="app-muted text-sm">{t("profile.firstRunBody")}</p>
+    <main className="app-screen onboarding-screen">
+      <section className="onboarding-shell">
+        <div className="onboarding-intro">
+          <div className="flex items-center gap-3">
+            <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-12 w-12 shrink-0 drop-shadow-[0_0_14px_rgba(99,102,241,0.45)]" />
+            <div>
+              <p className="app-subtle text-xs font-semibold uppercase tracking-wide">{t("app.installable")}</p>
+              <h1 className="app-heading text-2xl font-bold">Lexora</h1>
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <h2 className="app-heading text-3xl font-bold tracking-tight">{t("profile.firstRunTitle")}</h2>
+            <p className="app-muted max-w-md text-sm leading-relaxed">{t("profile.firstRunBody")}</p>
           </div>
         </div>
 
-        <div className="grid gap-4">
-          <Label text={t("profile.name")}>
-            <input
-              className="app-input"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder={t("profile.namePlaceholder")}
-              autoFocus
-              required
-            />
-          </Label>
-          <LanguageSelect label={t("profile.uiLanguage")} value={uiLanguage} onChange={setUiLanguage} />
-          <button className="app-button app-button-primary" type="submit" data-tooltip={t("common.create")}>
-            <UserRound size={18} />
-            {t("common.create")}
-          </button>
-        </div>
-      </form>
+        <form className="onboarding-form app-panel" onSubmit={handleSubmit}>
+          <div className="grid gap-1">
+            <h2 className="app-heading text-lg font-semibold">{t("profile.name")}</h2>
+            <p className="app-subtle text-sm">{t("profile.uiLanguage")}</p>
+          </div>
+          <div className="grid gap-4">
+            <Label text={t("profile.name")}>
+              <input
+                className="app-input"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={t("profile.namePlaceholder")}
+                autoFocus
+                required
+              />
+            </Label>
+            <LanguageSelect label={t("profile.uiLanguage")} value={uiLanguage} onChange={setUiLanguage} />
+            <button className="app-button app-button-primary" type="submit" data-tooltip={t("common.create")}>
+              <UserRound size={18} />
+              {t("common.create")}
+            </button>
+          </div>
+        </form>
+      </section>
     </main>
   );
 }
@@ -709,12 +726,23 @@ function SetupRequired({ profile, onCreated }: { profile: Profile; onCreated: ()
   }
 
   return (
-    <section className="flex items-center justify-center py-10">
-      <form className="app-panel w-full max-w-xl p-4" onSubmit={handleSubmit}>
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold">{t("setup.firstRunTitle")}</h1>
-          <p className="app-muted text-sm">{t("setup.firstRunBody")}</p>
+    <section className="app-screen onboarding-screen">
+      <div className="onboarding-shell">
+        <div className="onboarding-intro">
+          <div className="flex items-center gap-3">
+            <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-12 w-12 shrink-0 drop-shadow-[0_0_14px_rgba(99,102,241,0.45)]" />
+            <div>
+              <p className="app-subtle text-xs font-semibold uppercase tracking-wide">Lexora</p>
+              <h1 className="app-heading text-2xl font-bold">{t("setup.label")}</h1>
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <h2 className="app-heading text-3xl font-bold tracking-tight">{t("setup.firstRunTitle")}</h2>
+            <p className="app-muted max-w-md text-sm leading-relaxed">{t("setup.firstRunBody")}</p>
+          </div>
         </div>
+
+      <form className="onboarding-form app-panel" onSubmit={handleSubmit}>
         <div className="grid gap-4">
           <Label text={t("setup.name")}>
             <input
@@ -754,6 +782,7 @@ function SetupRequired({ profile, onCreated }: { profile: Profile; onCreated: ()
           </button>
         </div>
       </form>
+      </div>
     </section>
   );
 }
@@ -771,7 +800,7 @@ function StudyView({
   decks: Deck[];
   words: WordEntry[];
   cards: CardState[];
-  onRefresh: () => Promise<void>;
+  onRefresh: (nextActiveId?: string, showLoading?: boolean) => Promise<void>;
 }) {
   const { t, i18n } = useTranslation();
   const [scope, setScope] = useState<ScopeSelection>({ type: "all" });
@@ -841,9 +870,28 @@ function StudyView({
       return;
     }
 
+    if (!session.answer.trim()) {
+      return;
+    }
+
     const accepted = getAcceptedAnswers(session.current);
     const match = evaluateAnswer(session.answer, accepted);
     setSession({ ...session, revealed: true, match, selectedRating: defaultRatingForMatch(match, false) });
+  }
+
+  function revealUnknownAnswer() {
+    if (!session?.current) {
+      return;
+    }
+
+    setSession({
+      ...session,
+      answer: "",
+      revealed: true,
+      match: "wrong",
+      closeAccepted: false,
+      selectedRating: "again"
+    });
   }
 
   async function rateCurrent(rating = session?.selectedRating) {
@@ -1131,10 +1179,15 @@ function StudyView({
             />
           </Label>
           {!session.revealed ? (
-            <button className="app-button app-button-primary mt-4" onClick={submitAnswer} disabled={!session.answer.trim()} data-tooltip={t("study.submit")}>
-              <Check size={18} />
-              {t("study.submit")}
-            </button>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button className="app-button app-button-primary" onClick={submitAnswer} disabled={!session.answer.trim()} data-tooltip={t("study.submit")}>
+                <Check size={18} />
+                {t("study.submit")}
+              </button>
+              <button className="app-button app-button-secondary" type="button" onClick={revealUnknownAnswer} data-tooltip={t("study.dontKnowHint")}>
+                {t("study.dontKnow")}
+              </button>
+            </div>
           ) : (
             <div className="mt-5 grid gap-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1213,6 +1266,7 @@ function LibraryView({
   const [addWordPanelOpen, setAddWordPanelOpen] = useState(false);
   const [editingWord, setEditingWord] = useState<WordEntry | null>(null);
   const [editForm, setEditForm] = useState<WordFormState>({ ...emptyWordForm });
+  const [editDeckIds, setEditDeckIds] = useState<string[]>([]);
   const [editFormSubmitted, setEditFormSubmitted] = useState(false);
   const [suggestions, setSuggestions] = useState<TranslationResult[]>([]);
   const [fetching, setFetching] = useState(false);
@@ -1429,20 +1483,32 @@ function LibraryView({
   }
 
   function editWord(word: WordEntry) {
+    const deckIds = wordDeckIds(word);
+    const primaryDeckId = deckIds.includes(word.deckId) ? word.deckId : deckIds[0] ?? preferredLibraryDeckId(decks, setup.baseLanguage);
     setEditingWord(word);
     setEditForm({
       targetText: word.targetText,
       translations: word.translations.join("; "),
       notes: word.notes,
-      deckId: word.deckId
+      deckId: primaryDeckId
     });
+    setEditDeckIds(deckIds.length > 0 ? deckIds : [primaryDeckId]);
     setEditFormSubmitted(false);
   }
 
   function closeEditModal() {
     setEditingWord(null);
     setEditForm({ ...emptyWordForm });
+    setEditDeckIds([]);
     setEditFormSubmitted(false);
+  }
+
+  function toggleEditDeck(deckId: string, checked: boolean) {
+    const next = checked ? Array.from(new Set([...editDeckIds, deckId])) : editDeckIds.filter((candidate) => candidate !== deckId);
+    setEditDeckIds(next);
+    if (next.length > 0 && !next.includes(editForm.deckId)) {
+      setEditForm((formState) => ({ ...formState, deckId: next[0] }));
+    }
   }
 
   async function updateWord(event: FormEvent) {
@@ -1453,7 +1519,9 @@ function LibraryView({
 
     setEditFormSubmitted(true);
     const translations = splitTranslations(editForm.translations);
-    if (!editForm.targetText.trim() || translations.length === 0 || !editForm.deckId) {
+    const selectedDeckIds = editDeckIds.length > 0 ? editDeckIds : [editForm.deckId].filter(Boolean);
+    const primaryDeckId = selectedDeckIds.includes(editForm.deckId) ? editForm.deckId : selectedDeckIds[0];
+    if (!editForm.targetText.trim() || translations.length === 0 || !primaryDeckId || selectedDeckIds.length === 0) {
       return;
     }
 
@@ -1473,8 +1541,8 @@ function LibraryView({
       targetText: editForm.targetText.trim(),
       translations,
       notes: editForm.notes.trim(),
-      deckId: editForm.deckId,
-      deckIds: mergeDeckIds(editingWord.deckIds, editForm.deckId),
+      deckId: primaryDeckId,
+      deckIds: selectedDeckIds,
       updatedAt: nowIso()
     });
     closeEditModal();
@@ -1687,9 +1755,12 @@ function LibraryView({
             </Label>
             <div className="grid gap-3 sm:grid-cols-[14rem_minmax(0,1fr)]">
             <AppSelect
-              label={t("common.deck")}
+              label={t("library.primaryDeck")}
               value={editForm.deckId}
-              options={decks.map((deck) => ({ value: deck.id, label: deck.name, textValue: deck.name }))}
+              options={(decks.filter((deck) => editDeckIds.includes(deck.id)).length > 0
+                ? decks.filter((deck) => editDeckIds.includes(deck.id))
+                : decks
+              ).map((deck) => ({ value: deck.id, label: deck.name, textValue: deck.name }))}
               onChange={(deckId) => setEditForm({ ...editForm, deckId })}
             />
               <Label text={`${t("common.notes")} (${t("common.optional")})`}>
@@ -1700,6 +1771,34 @@ function LibraryView({
                   placeholder={t("library.notesPlaceholder")}
                 />
               </Label>
+            </div>
+            <div className="app-subpanel grid gap-2 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="app-heading text-sm font-semibold">{t("library.deckAssignments")}</h3>
+                <span className="app-chip">{editDeckIds.length} {t("common.deck")}</span>
+              </div>
+              <div className="grid gap-1">
+                {decks.map((deck) => {
+                  const checked = editDeckIds.includes(deck.id);
+                  const isLastAssigned = checked && editDeckIds.length <= 1;
+                  return (
+                    <label key={deck.id} className="deck-word-option">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={isLastAssigned}
+                        onChange={(event) => toggleEditDeck(deck.id, event.target.checked)}
+                      />
+                      <span className="min-w-0">
+                        <span className="deck-word-option-target">{deck.name}</span>
+                        <span className="deck-word-option-translation">
+                          {isLastAssigned ? t("library.atLeastOneDeck") : checked ? t("library.assigned") : t("library.unassigned")}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
             <div className="flex flex-wrap justify-end gap-2">
               <button className="app-button app-button-ghost" type="button" onClick={closeEditModal}>
@@ -1845,7 +1944,7 @@ function DecksView({
   setup: LearningSetup;
   decks: Deck[];
   words: WordEntry[];
-  onRefresh: () => Promise<void>;
+  onRefresh: (nextActiveId?: string, showLoading?: boolean) => Promise<void>;
   onStatus: (message: string) => void;
 }) {
   const { t } = useTranslation();
@@ -2117,7 +2216,7 @@ function SettingsView({
   usage: TranslationUsage | null;
   cloudProvider: ReturnType<typeof createGoogleDriveBackupProvider>;
   online: boolean;
-  onRefresh: () => Promise<void>;
+  onRefresh: (nextActiveId?: string, showLoading?: boolean) => Promise<void>;
   onStatus: (message: string) => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -2191,7 +2290,7 @@ function SettingsView({
     const created = await createProfile(newProfileName, profile.uiLanguage);
     localStorage.setItem(activeProfileStorageKey, created.id);
     setNewProfileName("");
-    await onRefresh();
+    await onRefresh(created.id);
   }
 
   async function createSetup(event: FormEvent) {
@@ -2587,7 +2686,7 @@ function SettingsView({
           <Label text={t("profile.name")}>
             <input className="app-input" value={newProfileName} onChange={(event) => setNewProfileName(event.target.value)} placeholder={t("profile.namePlaceholder")} />
           </Label>
-          <p className="app-muted text-sm">{profiles.length} {t("profile.switch")}</p>
+          <p className="app-muted text-sm">{t("profile.count", { count: String(profiles.length) })}</p>
           <button className="app-button app-button-primary w-fit" type="submit" data-tooltip={t("profile.createAnother")}>
             <Plus size={18} />
             {t("common.create")}

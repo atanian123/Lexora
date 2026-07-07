@@ -59,7 +59,8 @@ const en = {
     baseLanguage: "Base language",
     targetLanguage: "Target language",
     switch: "Switch profile",
-    createAnother: "Create profile"
+    createAnother: "Create profile",
+    count: "Profiles on this device: {{count}}"
   },
   setup: {
     label: "Language to practice",
@@ -105,7 +106,12 @@ const en = {
     duplicateInline: "A word or phrase with this text already exists.",
     addDuplicate: "Add anyway",
     targetRequired: "Enter the word or phrase to learn.",
-    translationsRequired: "Enter at least one accepted translation."
+    translationsRequired: "Enter at least one accepted translation.",
+    primaryDeck: "Primary deck",
+    deckAssignments: "Deck assignments",
+    atLeastOneDeck: "At least one deck is required.",
+    assigned: "Assigned",
+    unassigned: "Not assigned"
   },
   decks: {
     title: "Decks",
@@ -134,6 +140,8 @@ const en = {
     answer: "Your answer",
     answerPlaceholder: "Type your answer",
     submit: "Submit",
+    dontKnow: "I don't know",
+    dontKnowHint: "Reveal the answer and review this card again soon.",
     reveal: "Correct answer",
     acceptClose: "Accept close answer",
     closeAnswer: "Close answer",
@@ -302,7 +310,8 @@ const bg = {
     baseLanguage: "Базов език",
     targetLanguage: "Целеви език",
     switch: "Смени профил",
-    createAnother: "Създай профил"
+    createAnother: "Създай профил",
+    count: "Профили на това устройство: {{count}}"
   },
   setup: {
     label: "Език за упражнение",
@@ -348,7 +357,12 @@ const bg = {
     duplicateInline: "Дума или фраза с този текст вече съществува.",
     addDuplicate: "Добави въпреки това",
     targetRequired: "Въведи думата или фразата за учене.",
-    translationsRequired: "Въведи поне един приет превод."
+    translationsRequired: "Въведи поне един приет превод.",
+    primaryDeck: "Основно тесте",
+    deckAssignments: "Присвояване към тестета",
+    atLeastOneDeck: "Необходимо е поне едно тесте.",
+    assigned: "Присвоено",
+    unassigned: "Не е присвоено"
   },
   decks: {
     title: "Тестета",
@@ -377,6 +391,8 @@ const bg = {
     answer: "Твоят отговор",
     answerPlaceholder: "Въведи отговор",
     submit: "Провери",
+    dontKnow: "Не знам",
+    dontKnowHint: "Покажи отговора и повтори тази карта скоро.",
     reveal: "Правилен отговор",
     acceptClose: "Приеми близък отговор",
     closeAnswer: "Близък отговор",
@@ -534,7 +550,8 @@ const de = {
     baseLanguage: "Basissprache",
     targetLanguage: "Zielsprache",
     switch: "Profil wechseln",
-    createAnother: "Profil erstellen"
+    createAnother: "Profil erstellen",
+    count: "Profile auf diesem Gerät: {{count}}"
   },
   setup: {
     label: "Sprache zum Üben",
@@ -580,7 +597,12 @@ const de = {
     duplicateInline: "Ein Wort oder eine Phrase mit diesem Text existiert bereits.",
     addDuplicate: "Trotzdem hinzufügen",
     targetRequired: "Gib das Wort oder die Phrase zum Lernen ein.",
-    translationsRequired: "Gib mindestens eine akzeptierte Übersetzung ein."
+    translationsRequired: "Gib mindestens eine akzeptierte Übersetzung ein.",
+    primaryDeck: "Primärer Stapel",
+    deckAssignments: "Stapelzuordnung",
+    atLeastOneDeck: "Mindestens ein Stapel ist erforderlich.",
+    assigned: "Zugeordnet",
+    unassigned: "Nicht zugeordnet"
   },
   decks: {
     title: "Stapel",
@@ -609,6 +631,8 @@ const de = {
     answer: "Deine Antwort",
     answerPlaceholder: "Antwort eingeben",
     submit: "Absenden",
+    dontKnow: "Ich weiß es nicht",
+    dontKnowHint: "Antwort anzeigen und diese Karte bald erneut üben.",
     reveal: "Richtige Antwort",
     acceptClose: "Nahe Antwort akzeptieren",
     closeAnswer: "Nahe Antwort",
@@ -766,7 +790,8 @@ const fr = {
     baseLanguage: "Langue de base",
     targetLanguage: "Langue cible",
     switch: "Changer de profil",
-    createAnother: "Créer un profil"
+    createAnother: "Créer un profil",
+    count: "Profils sur cet appareil : {{count}}"
   },
   setup: {
     label: "Langue à pratiquer",
@@ -812,7 +837,12 @@ const fr = {
     duplicateInline: "Un mot ou une expression avec ce texte existe déjà.",
     addDuplicate: "Ajouter quand même",
     targetRequired: "Saisissez le mot ou l'expression à apprendre.",
-    translationsRequired: "Saisissez au moins une traduction acceptée."
+    translationsRequired: "Saisissez au moins une traduction acceptée.",
+    primaryDeck: "Paquet principal",
+    deckAssignments: "Affectations aux paquets",
+    atLeastOneDeck: "Au moins un paquet est requis.",
+    assigned: "Affecté",
+    unassigned: "Non affecté"
   },
   decks: {
     title: "Paquets",
@@ -841,6 +871,8 @@ const fr = {
     answer: "Votre réponse",
     answerPlaceholder: "Saisissez votre réponse",
     submit: "Valider",
+    dontKnow: "Je ne sais pas",
+    dontKnowHint: "Afficher la réponse et revoir cette carte bientôt.",
     reveal: "Bonne réponse",
     acceptClose: "Accepter la réponse proche",
     closeAnswer: "Réponse proche",
@@ -998,7 +1030,8 @@ const it = {
     baseLanguage: "Lingua base",
     targetLanguage: "Lingua obiettivo",
     switch: "Cambia profilo",
-    createAnother: "Crea profilo"
+    createAnother: "Crea profilo",
+    count: "Profili su questo dispositivo: {{count}}"
   },
   setup: {
     label: "Lingua da praticare",
@@ -1044,7 +1077,12 @@ const it = {
     duplicateInline: "Esiste già una parola o frase con questo testo.",
     addDuplicate: "Aggiungi comunque",
     targetRequired: "Inserisci la parola o frase da imparare.",
-    translationsRequired: "Inserisci almeno una traduzione accettata."
+    translationsRequired: "Inserisci almeno una traduzione accettata.",
+    primaryDeck: "Mazzo principale",
+    deckAssignments: "Assegnazioni ai mazzi",
+    atLeastOneDeck: "È richiesto almeno un mazzo.",
+    assigned: "Assegnato",
+    unassigned: "Non assegnato"
   },
   decks: {
     title: "Mazzi",
@@ -1073,6 +1111,8 @@ const it = {
     answer: "La tua risposta",
     answerPlaceholder: "Scrivi la risposta",
     submit: "Invia",
+    dontKnow: "Non lo so",
+    dontKnowHint: "Mostra la risposta e ripassa presto questa carta.",
     reveal: "Risposta corretta",
     acceptClose: "Accetta risposta vicina",
     closeAnswer: "Risposta vicina",
@@ -1230,7 +1270,8 @@ const es = {
     baseLanguage: "Idioma base",
     targetLanguage: "Idioma objetivo",
     switch: "Cambiar perfil",
-    createAnother: "Crear perfil"
+    createAnother: "Crear perfil",
+    count: "Perfiles en este dispositivo: {{count}}"
   },
   setup: {
     label: "Idioma para practicar",
@@ -1276,7 +1317,12 @@ const es = {
     duplicateInline: "Ya existe una palabra o frase con este texto.",
     addDuplicate: "Añadir igualmente",
     targetRequired: "Introduce la palabra o frase para aprender.",
-    translationsRequired: "Introduce al menos una traducción aceptada."
+    translationsRequired: "Introduce al menos una traducción aceptada.",
+    primaryDeck: "Mazo principal",
+    deckAssignments: "Asignaciones de mazos",
+    atLeastOneDeck: "Se requiere al menos un mazo.",
+    assigned: "Asignado",
+    unassigned: "No asignado"
   },
   decks: {
     title: "Mazos",
@@ -1305,6 +1351,8 @@ const es = {
     answer: "Tu respuesta",
     answerPlaceholder: "Escribe tu respuesta",
     submit: "Enviar",
+    dontKnow: "No lo sé",
+    dontKnowHint: "Muestra la respuesta y repasa esta tarjeta pronto.",
     reveal: "Respuesta correcta",
     acceptClose: "Aceptar respuesta cercana",
     closeAnswer: "Respuesta cercana",
@@ -1462,7 +1510,8 @@ const pt = {
     baseLanguage: "Idioma base",
     targetLanguage: "Idioma alvo",
     switch: "Mudar perfil",
-    createAnother: "Criar perfil"
+    createAnother: "Criar perfil",
+    count: "Perfis neste dispositivo: {{count}}"
   },
   setup: {
     label: "Idioma para praticar",
@@ -1508,7 +1557,12 @@ const pt = {
     duplicateInline: "Já existe uma palavra ou frase com este texto.",
     addDuplicate: "Adicionar mesmo assim",
     targetRequired: "Introduza a palavra ou frase para aprender.",
-    translationsRequired: "Introduza pelo menos uma tradução aceite."
+    translationsRequired: "Introduza pelo menos uma tradução aceite.",
+    primaryDeck: "Baralho principal",
+    deckAssignments: "Atribuições de baralhos",
+    atLeastOneDeck: "É necessário pelo menos um baralho.",
+    assigned: "Atribuído",
+    unassigned: "Não atribuído"
   },
   decks: {
     title: "Baralhos",
@@ -1537,6 +1591,8 @@ const pt = {
     answer: "A sua resposta",
     answerPlaceholder: "Escreva a resposta",
     submit: "Enviar",
+    dontKnow: "Não sei",
+    dontKnowHint: "Mostra a resposta e revê este cartão em breve.",
     reveal: "Resposta correta",
     acceptClose: "Aceitar resposta próxima",
     closeAnswer: "Resposta próxima",
@@ -1694,7 +1750,8 @@ const ru = {
     baseLanguage: "Базовый язык",
     targetLanguage: "Изучаемый язык",
     switch: "Сменить профиль",
-    createAnother: "Создать профиль"
+    createAnother: "Создать профиль",
+    count: "Профили на этом устройстве: {{count}}"
   },
   setup: {
     label: "Язык для практики",
@@ -1740,7 +1797,12 @@ const ru = {
     duplicateInline: "Слово или фраза с таким текстом уже существует.",
     addDuplicate: "Все равно добавить",
     targetRequired: "Введите слово или фразу для изучения.",
-    translationsRequired: "Введите хотя бы один допустимый перевод."
+    translationsRequired: "Введите хотя бы один допустимый перевод.",
+    primaryDeck: "Основная колода",
+    deckAssignments: "Назначения колод",
+    atLeastOneDeck: "Нужна хотя бы одна колода.",
+    assigned: "Назначено",
+    unassigned: "Не назначено"
   },
   decks: {
     title: "Колоды",
@@ -1769,6 +1831,8 @@ const ru = {
     answer: "Ваш ответ",
     answerPlaceholder: "Введите ответ",
     submit: "Отправить",
+    dontKnow: "Не знаю",
+    dontKnowHint: "Показать ответ и скоро повторить эту карточку.",
     reveal: "Правильный ответ",
     acceptClose: "Принять близкий ответ",
     closeAnswer: "Близкий ответ",

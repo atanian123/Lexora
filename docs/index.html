@@ -9,18 +9,19 @@
     <script>
       (() => {
         try {
-          const theme = localStorage.getItem("lexora.theme") === "light" ? "light" : "dark";
+          const theme = localStorage.getItem("lexora.theme") === "dark" ? "dark" : "light";
           document.documentElement.dataset.theme = theme;
           document.documentElement.style.colorScheme = theme;
           document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#0f0f1a" : "#f7f9fc");
         } catch {
-          document.documentElement.dataset.theme = "dark";
+          document.documentElement.dataset.theme = "light";
         }
       })();
     </script>
     <title>Lexora</title>
-    <script type="module" crossorigin src="/Lexora/assets/index-DLWsRQRZ.js"></script>
-    <link rel="stylesheet" crossorigin href="/Lexora/assets/index-DIcraPcO.css">
+    <script type="module" crossorigin src="/Lexora/assets/index-B4EVZ0V6.js"></script>
+    <link rel="modulepreload" crossorigin href="/Lexora/assets/preload-helper-BeVOzRaa.js">
+    <link rel="stylesheet" crossorigin href="/Lexora/assets/index-DRKgT2BY.css">
   <link rel="manifest" href="/Lexora/manifest.webmanifest"></head>
   <body>
     <div id="root"></div>
