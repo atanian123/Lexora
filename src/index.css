@@ -1470,9 +1470,11 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
   position: relative;
 }
 
-[data-tooltip]:not([data-tooltip=""]):hover,
-[data-tooltip]:not([data-tooltip=""]):focus-visible {
-  z-index: 120;
+@media (hover: hover) and (pointer: fine) {
+  [data-tooltip]:not([data-tooltip=""]):hover,
+  [data-tooltip]:not([data-tooltip=""]):focus-visible {
+    z-index: 120;
+  }
 }
 
 [data-tooltip]:not([data-tooltip=""])::after {
@@ -1561,6 +1563,14 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
 
 [data-tooltip]:not([data-tooltip=""]):hover::before {
   transform: translateY(0) rotate(45deg) scale(1);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .tooltip-bubble,
+  [data-tooltip]:not([data-tooltip=""])::before,
+  [data-tooltip]:not([data-tooltip=""])::after {
+    display: none;
+  }
 }
 
 .due-status {
