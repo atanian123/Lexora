@@ -83,7 +83,7 @@ Supported actions:
 - Filter by deck and review status.
 - Monitor daily translation usage.
 
-Manual translation entry remains available when offline or when the translation quota is reached. The last selected deck is preserved while adding multiple words, so repeated entry into the same deck is fast.
+Manual translation entry remains available when offline or when the translation quota is reached. After each save, the word-entry dialog clears the fields, keeps the selected deck, and returns focus to the word field. Close it when you finish adding words.
 
 Photo recognition runs in the browser and downloads its language models when needed. Use one word or phrase per line, or one bilingual pair per row with a separator or a clear gap between columns. Automatic scans use one MyMemory lookup per distinct term, adding example context where it fits and preferring exact machine translations when available.
 

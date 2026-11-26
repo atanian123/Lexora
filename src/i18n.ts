@@ -283,6 +283,7 @@ const en = {
     imported: "Imported {{count}} items.",
     importFailed: "Import failed. Check the file format.",
     saved: "Saved",
+    saveFailed: "Could not save. Please try again.",
     deleted: "Deleted"
   }
 };
@@ -569,6 +570,7 @@ const bg = {
     imported: "Импортирани {{count}} елемента.",
     importFailed: "Импортът е неуспешен. Провери формата на файла.",
     saved: "Запазено",
+    saveFailed: "Промените не бяха запазени. Опитай отново.",
     deleted: "Изтрито"
   }
 };
@@ -844,6 +846,7 @@ const de = {
     imported: "{{count}} Einträge importiert.",
     importFailed: "Import fehlgeschlagen. Prüfe das Dateiformat.",
     saved: "Gespeichert",
+    saveFailed: "Speichern fehlgeschlagen. Bitte versuche es erneut.",
     deleted: "Gelöscht"
   }
 };
@@ -1119,6 +1122,7 @@ const fr = {
     imported: "{{count}} éléments importés.",
     importFailed: "Échec de l'import. Vérifiez le format du fichier.",
     saved: "Enregistré",
+    saveFailed: "Échec de l’enregistrement. Réessayez.",
     deleted: "Supprimé"
   }
 };
@@ -1394,6 +1398,7 @@ const it = {
     imported: "{{count}} elementi importati.",
     importFailed: "Importazione non riuscita. Controlla il formato del file.",
     saved: "Salvato",
+    saveFailed: "Impossibile salvare. Riprova.",
     deleted: "Eliminato"
   }
 };
@@ -1669,6 +1674,7 @@ const es = {
     imported: "{{count}} elementos importados.",
     importFailed: "Error al importar. Revisa el formato del archivo.",
     saved: "Guardado",
+    saveFailed: "No se pudo guardar. Inténtalo de nuevo.",
     deleted: "Eliminado"
   }
 };
@@ -1944,6 +1950,7 @@ const pt = {
     imported: "{{count}} itens importados.",
     importFailed: "Falha ao importar. Verifique o formato do ficheiro.",
     saved: "Guardado",
+    saveFailed: "Não foi possível guardar. Tenta novamente.",
     deleted: "Eliminado"
   }
 };
@@ -2219,6 +2226,7 @@ const ru = {
     imported: "Импортировано элементов: {{count}}.",
     importFailed: "Импорт не удался. Проверьте формат файла.",
     saved: "Сохранено",
+    saveFailed: "Не удалось сохранить. Попробуйте ещё раз.",
     deleted: "Удалено"
   }
 };

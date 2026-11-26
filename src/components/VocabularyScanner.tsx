@@ -10,17 +10,19 @@ import { normalizeDuplicateText, splitTranslations } from "../lib/vocabulary";
 import type { ScanMode, ScannedWord } from "../lib/vocabularyScan";
 import type { Deck, LearningSetup, WordEntry } from "../types";
 import { AppSelect } from "./AppSelect";
+import { Modal } from "./Modal";
 import { Label } from "./ui";
 
 interface ReviewRow extends ScannedWord {
   id: string;
 }
 
-export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onImported }: {
+export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onClose, onImported }: {
   setup: LearningSetup;
   decks: Deck[];
   defaultDeckId: string;
   onRefresh: () => Promise<void>;
+  onClose: () => void;
   onImported: (count: number, duplicates: number) => void;
 }) {
   const { t } = useTranslation();
@@ -171,94 +173,96 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onIm
   }
 
   return (
-    <section className="app-panel grid gap-3 p-4" aria-label={t("scan.title")}>
-      <div className="grid gap-2 sm:grid-cols-2">
-        <AppSelect
-          label={t("scan.content")}
-          value={mode}
-          disabled={busy}
-          options={(["targetOnly", "paired"] as const).map((value) => ({ value, label: t(`scan.${value}`) }))}
-          onChange={(value) => setMode(value === "paired" ? "paired" : "targetOnly")}
-          wrap
-        />
-        {mode === "paired" ? (
+    <Modal title={t("scan.title")} onClose={onClose} closeDisabled={saving} wide>
+      <div className="grid gap-3">
+        <div className="grid gap-2 sm:grid-cols-2">
           <AppSelect
-            label={t("scan.order")}
-            value={translationFirst ? "translationFirst" : "targetFirst"}
+            label={t("scan.content")}
+            value={mode}
             disabled={busy}
-            options={(["targetFirst", "translationFirst"] as const).map((value) => ({ value, label: t(`scan.${value}`) }))}
-            onChange={(value) => setTranslationFirst(value === "translationFirst")}
+            options={(["targetOnly", "paired"] as const).map((value) => ({ value, label: t(`scan.${value}`) }))}
+            onChange={(value) => setMode(value === "paired" ? "paired" : "targetOnly")}
             wrap
           />
-        ) : null}
-      </div>
-      <p className="app-muted text-sm">{t(mode === "paired" ? "scan.pairedHint" : "scan.targetHint")}</p>
-      <input ref={photoInput} type="file" accept="image/*" hidden onChange={readPhoto} />
-      <input ref={cameraInput} type="file" accept="image/*" capture="environment" hidden onChange={readPhoto} />
-      <div className="flex flex-wrap gap-2">
-        <button className="app-button app-button-secondary" type="button" disabled={busy} onClick={() => photoInput.current?.click()}>
-          <ImagePlus size={17} /> {t("scan.choosePhoto")}
-        </button>
-        <button className="app-button app-button-secondary [@media(pointer:fine)]:hidden" type="button" disabled={busy} onClick={() => cameraInput.current?.click()}>
-          <Camera size={17} /> {t("scan.takePhoto")}
-        </button>
-      </div>
-      <div className="app-muted empty:hidden text-sm" role="status">
-        {reading !== null ? t("scan.reading", { progress: reading }) : null}
-        {translating ? t("scan.translating", translating) : null}
-        {message ? <p>{message}</p> : null}
-      </div>
-      {preview ? (
-        <details className="app-subpanel p-3">
-          <summary className="app-heading cursor-pointer text-sm font-semibold">{t("scan.sourcePhoto")}</summary>
-          <img className="mt-2 max-h-80 max-w-full object-contain" src={preview} alt={t("scan.sourcePhoto")} />
-        </details>
-      ) : null}
-      {rows ? (
-        <form className="app-subpanel grid gap-3 p-3" onSubmit={importRows}>
-          <h3 className="app-heading font-semibold">{t("scan.review")}</h3>
-          <p className="app-muted text-sm">{t("scan.reviewHint")}</p>
-          {rows.map((row, index) => (
-            <div key={row.id} className="app-divider grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 border-b pb-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-              <div className="col-span-2 grid gap-2 sm:col-span-1">
-                <Label text={t("library.targetText")}>
-                  <input className="app-input" value={row.targetText} disabled={busy} required onChange={(event) => updateRow(row.id, { targetText: event.target.value })} />
-                </Label>
-              </div>
-              <Label text={t("common.translations")}>
-                <input className="app-input" value={row.translations} disabled={busy} required onChange={(event) => updateRow(row.id, { translations: event.target.value })} />
-              </Label>
-              <button
-                className="app-button app-button-danger app-icon-button self-end"
-                type="button"
-                disabled={busy}
-                aria-label={t("scan.removeRow", { number: index + 1 })}
-                data-tooltip={t("common.delete")}
-                onClick={() => setRows((current) => current?.filter((item) => item.id !== row.id) ?? null)}
-              >
-                <Trash2 size={17} />
-              </button>
-            </div>
-          ))}
-          <button className="app-button app-button-secondary w-fit" type="button" disabled={busy} onClick={() => setRows((current) => [...(current ?? []), { id: createId("scan"), targetText: "", translations: "" }])}>
-            <Plus size={17} /> {t("scan.addRow")}
-          </button>
-          <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,20rem)_auto] sm:justify-between">
+          {mode === "paired" ? (
             <AppSelect
-              label={t("common.deck")}
-              value={destination}
+              label={t("scan.order")}
+              value={translationFirst ? "translationFirst" : "targetFirst"}
               disabled={busy}
-              options={decks.map((deck) => ({ value: deck.id, label: deck.name }))}
-              onChange={setDeckId}
-              placement="above"
+              options={(["targetFirst", "translationFirst"] as const).map((value) => ({ value, label: t(`scan.${value}`) }))}
+              onChange={(value) => setTranslationFirst(value === "translationFirst")}
               wrap
             />
-            <button className="app-button app-button-primary justify-self-end" type="submit" disabled={busy || !rows.length || incomplete || !destination}>
-              {t(saving ? "scan.saving" : "scan.importWords")}
+          ) : null}
+        </div>
+        <p className="app-muted text-sm">{t(mode === "paired" ? "scan.pairedHint" : "scan.targetHint")}</p>
+        <input ref={photoInput} type="file" accept="image/*" hidden onChange={readPhoto} />
+        <input ref={cameraInput} type="file" accept="image/*" capture="environment" hidden onChange={readPhoto} />
+        <div className="flex flex-wrap gap-2">
+          <button className="app-button app-button-secondary" type="button" disabled={busy} onClick={() => photoInput.current?.click()}>
+            <ImagePlus size={17} /> {t("scan.choosePhoto")}
+          </button>
+          <button className="app-button app-button-secondary [@media(pointer:fine)]:hidden" type="button" disabled={busy} onClick={() => cameraInput.current?.click()}>
+            <Camera size={17} /> {t("scan.takePhoto")}
+          </button>
+        </div>
+        <div className="app-muted empty:hidden text-sm" role="status">
+          {reading !== null ? t("scan.reading", { progress: reading }) : null}
+          {translating ? t("scan.translating", translating) : null}
+          {message ? <p>{message}</p> : null}
+        </div>
+        {preview ? (
+          <details className="app-subpanel p-3">
+            <summary className="app-heading cursor-pointer text-sm font-semibold">{t("scan.sourcePhoto")}</summary>
+            <img className="mt-2 max-h-80 max-w-full object-contain" src={preview} alt={t("scan.sourcePhoto")} />
+          </details>
+        ) : null}
+        {rows ? (
+          <form className="app-subpanel grid gap-3 p-3" onSubmit={importRows}>
+            <h3 className="app-heading font-semibold">{t("scan.review")}</h3>
+            <p className="app-muted text-sm">{t("scan.reviewHint")}</p>
+            {rows.map((row, index) => (
+              <div key={row.id} className="app-divider grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 border-b pb-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                <div className="col-span-2 grid gap-2 sm:col-span-1">
+                  <Label text={t("library.targetText")}>
+                    <input className="app-input" value={row.targetText} disabled={busy} required onChange={(event) => updateRow(row.id, { targetText: event.target.value })} />
+                  </Label>
+                </div>
+                <Label text={t("common.translations")}>
+                  <input className="app-input" value={row.translations} disabled={busy} required onChange={(event) => updateRow(row.id, { translations: event.target.value })} />
+                </Label>
+                <button
+                  className="app-button app-button-danger app-icon-button self-end"
+                  type="button"
+                  disabled={busy}
+                  aria-label={t("scan.removeRow", { number: index + 1 })}
+                  data-tooltip={t("common.delete")}
+                  onClick={() => setRows((current) => current?.filter((item) => item.id !== row.id) ?? null)}
+                >
+                  <Trash2 size={17} />
+                </button>
+              </div>
+            ))}
+            <button className="app-button app-button-secondary w-fit" type="button" disabled={busy} onClick={() => setRows((current) => [...(current ?? []), { id: createId("scan"), targetText: "", translations: "" }])}>
+              <Plus size={17} /> {t("scan.addRow")}
             </button>
-          </div>
-        </form>
-      ) : null}
-    </section>
+            <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,20rem)_auto] sm:justify-between">
+              <AppSelect
+                label={t("common.deck")}
+                value={destination}
+                disabled={busy}
+                options={decks.map((deck) => ({ value: deck.id, label: deck.name }))}
+                onChange={setDeckId}
+                placement="above"
+                wrap
+              />
+              <button className="app-button app-button-primary justify-self-end" type="submit" disabled={busy || !rows.length || incomplete || !destination}>
+                {t(saving ? "scan.saving" : "scan.importWords")}
+              </button>
+            </div>
+          </form>
+        ) : null}
+      </div>
+    </Modal>
   );
 }

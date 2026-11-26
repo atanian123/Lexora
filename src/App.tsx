@@ -73,6 +73,7 @@ import { scheduleReview } from "./lib/srs";
 import { fetchTranslationSuggestions, getTodayTranslationUsage } from "./lib/translation";
 import { ConfirmationProvider, useConfirm } from "./components/confirmation";
 import { AppSelect } from "./components/AppSelect";
+import { Modal } from "./components/Modal";
 import { FlagIcon, HeaderSelect, Label, Metric, NavButton, ViewTitle } from "./components/ui";
 import { VocabularyScanner } from "./components/VocabularyScanner";
 import { normalizeDuplicateText, splitTranslations } from "./lib/vocabulary";
@@ -1289,8 +1290,12 @@ function LibraryView({
   const { t, i18n } = useTranslation();
   const confirm = useConfirm();
   const [form, setForm] = useState<WordFormState>(() => ({ ...emptyWordForm, deckId: preferredLibraryDeckId(decks, setup.baseLanguage) }));
-  const [addWordPanelOpen, setAddWordPanelOpen] = useState(false);
-  const [scannerOpen, setScannerOpen] = useState(false);
+  const [captureDialog, setCaptureDialog] = useState<"word" | "scan" | null>(null);
+  const wordInput = useRef<HTMLInputElement>(null);
+  const wordTranslationHintId = useId();
+  const suggestionRequest = useRef<AbortController | null>(null);
+  const [savingWord, setSavingWord] = useState(false);
+  const [wordStatus, setWordStatus] = useState("");
   const [editingWord, setEditingWord] = useState<WordEntry | null>(null);
   const [editForm, setEditForm] = useState<WordFormState>({ ...emptyWordForm });
   const [editDeckIds, setEditDeckIds] = useState<string[]>([]);
@@ -1327,6 +1332,7 @@ function LibraryView({
   useEffect(() => {
     const text = form.targetText.trim();
     if (
+      captureDialog !== "word" ||
       text.length < 2 ||
       form.translations.trim() ||
       fetching ||
@@ -1341,7 +1347,9 @@ function LibraryView({
     }, 800);
 
     return () => window.clearTimeout(timeoutId);
-  }, [fetching, form.targetText, form.translations, lastAutoSuggestedText, translationLimitReached]);
+  }, [captureDialog, fetching, form.targetText, form.translations, lastAutoSuggestedText, translationLimitReached]);
+
+  useEffect(() => () => suggestionRequest.current?.abort(), []);
 
   const cardByWord = useMemo(() => groupCardsByWord(cards), [cards]);
   const filteredWords = useMemo(() => words.filter((word) => {
@@ -1415,70 +1423,91 @@ function LibraryView({
     const targetText = form.targetText.trim();
     if (!targetText || translationLimitReached) {
       if (translationLimitReached) {
-        onStatus(t("status.limitReached"));
+        setWordStatus(t("status.limitReached"));
       }
       return;
     }
 
+    suggestionRequest.current?.abort();
+    const controller = new AbortController();
+    suggestionRequest.current = controller;
     setFetching(true);
     try {
-      const result = await fetchTranslationSuggestions(targetText, setup.targetLanguage, setup.baseLanguage);
+      const result = await fetchTranslationSuggestions(targetText, setup.targetLanguage, setup.baseLanguage, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setSuggestions(result);
       setLastAutoSuggestedText(targetText);
       if (!automatic && result.length === 0) {
-        onStatus(t("status.noSuggestions"));
+        setWordStatus(t("status.noSuggestions"));
       }
       await onRefresh();
     } catch (error) {
+      if (controller.signal.aborted) return;
       setLastAutoSuggestedText(targetText);
       if (!automatic) {
-        onStatus(error instanceof Error && error.message === "daily-limit" ? t("status.limitReached") : t("status.offline"));
+        setWordStatus(t(error instanceof Error && error.message === "daily-limit" ? "status.limitReached" : "status.offline"));
       }
     } finally {
-      setFetching(false);
+      if (suggestionRequest.current === controller) {
+        suggestionRequest.current = null;
+        setFetching(false);
+      }
     }
   }
 
   async function saveWord(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (savingWord) return;
     setWordFormSubmitted(true);
     const translations = splitTranslations(form.translations);
     if (!form.targetText.trim() || translations.length === 0 || !form.deckId) {
       return;
     }
 
-    if (duplicateWord) {
-      const addDuplicate = await confirm({
-        title: t("library.duplicateTitle"),
-        message: t("library.duplicateBody", { word: duplicateWord.targetText }),
-        confirmLabel: t("library.addDuplicate"),
-        cancelLabel: t("common.cancel")
-      });
-      if (!addDuplicate) {
-        return;
+    setSavingWord(true);
+    setWordStatus("");
+    try {
+      if (duplicateWord) {
+        const addDuplicate = await confirm({
+          title: t("library.duplicateTitle"),
+          message: t("library.duplicateBody", { word: duplicateWord.targetText }),
+          confirmLabel: t("library.addDuplicate"),
+          cancelLabel: t("common.cancel")
+        });
+        if (!addDuplicate) {
+          requestAnimationFrame(() => wordInput.current?.focus());
+          return;
+        }
       }
+
+      const timestamp = nowIso();
+      const word: WordEntry = {
+        id: createId("word"),
+        profileId: profile.id,
+        learningSetupId: setup.id,
+        deckId: form.deckId,
+        deckIds: [form.deckId],
+        targetText: form.targetText.trim(),
+        translations,
+        notes: form.notes.trim(),
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      await db.transaction("rw", db.decks, db.words, db.cards, async () => {
+        const deck = await db.decks.get(word.deckId);
+        if (!deck || deck.learningSetupId !== setup.id) throw new Error("Destination deck is no longer available.");
+        await db.words.add(word);
+        await ensureCardsForWords([word]);
+      });
+    } catch {
+      setWordStatus(t("status.saveFailed"));
+      return;
+    } finally {
+      setSavingWord(false);
     }
 
-    const timestamp = nowIso();
-    const word: WordEntry = {
-      id: createId("word"),
-      profileId: profile.id,
-      learningSetupId: setup.id,
-      deckId: form.deckId,
-      deckIds: [form.deckId],
-      targetText: form.targetText.trim(),
-      translations,
-      notes: form.notes.trim(),
-      createdAt: timestamp,
-      updatedAt: timestamp
-    };
-    await db.words.add(word);
-    await ensureCardsForWords([word]);
-
-    setForm({ ...emptyWordForm, deckId: form.deckId });
-    setSuggestions([]);
-    setWordFormSubmitted(false);
-    onStatus(t("status.saved"));
+    resetWordForm();
+    setWordStatus(t("status.saved"));
     await onRefresh();
   }
 
@@ -1505,8 +1534,28 @@ function LibraryView({
 
   function resetWordForm() {
     setForm({ ...emptyWordForm, deckId: form.deckId || preferredLibraryDeckId(decks, setup.baseLanguage) });
-    setSuggestions([]);
+    clearSuggestions();
     setWordFormSubmitted(false);
+    setWordStatus("");
+    requestAnimationFrame(() => wordInput.current?.focus());
+  }
+
+  function cancelSuggestions() {
+    suggestionRequest.current?.abort();
+    suggestionRequest.current = null;
+    setFetching(false);
+  }
+
+  function clearSuggestions() {
+    cancelSuggestions();
+    setSuggestions([]);
+    setLastAutoSuggestedText("");
+  }
+
+  function closeCaptureDialog() {
+    cancelSuggestions();
+    setWordStatus("");
+    setCaptureDialog(null);
   }
 
   function editWord(word: WordEntry) {
@@ -1581,168 +1630,170 @@ function LibraryView({
     <section className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <ViewTitle title={t("library.title")} />
-        <button className="app-button app-button-secondary" type="button" aria-expanded={scannerOpen} onClick={() => setScannerOpen((open) => !open)}>
-          <ScanLine size={18} />
-          {t("scan.title")}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button className="app-button app-button-primary app-button-compact" type="button" aria-haspopup="dialog" onClick={() => setCaptureDialog("word")}>
+            <Plus size={17} />
+            {t("library.addWord")}
+          </button>
+          <button className="app-button app-button-secondary app-button-compact" type="button" aria-haspopup="dialog" onClick={() => setCaptureDialog("scan")}>
+            <ScanLine size={17} />
+            {t("scan.title")}
+          </button>
+        </div>
       </div>
-      {scannerOpen ? (
+      {captureDialog === "scan" ? (
         <VocabularyScanner
           setup={setup}
           decks={decks}
           defaultDeckId={preferredLibraryDeckId(decks, setup.baseLanguage)}
           onRefresh={onRefresh}
+          onClose={closeCaptureDialog}
           onImported={(count, duplicates) => {
             onStatus(t(duplicates ? "scan.importedWithDuplicates" : "status.imported", { count, duplicates }));
-            setScannerOpen(false);
+            closeCaptureDialog();
           }}
         />
       ) : null}
-      <form className="app-panel grid gap-3 p-4" onSubmit={saveWord} noValidate>
-        <button
-          className="flex w-full items-center justify-between gap-3 rounded-xl px-1 py-1.5 text-left transition hover:bg-[var(--dropdown-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-          type="button"
-          aria-label={addWordPanelOpen ? t("common.collapse") : t("common.expand")}
-          aria-expanded={addWordPanelOpen}
-          onClick={() => setAddWordPanelOpen((open) => !open)}
-          data-tooltip={addWordPanelOpen ? t("common.collapse") : t("common.expand")}
-        >
-          <span className="min-w-0">
-            <h2 className="app-heading text-base font-semibold">{t("library.addWord")}</h2>
-            <p className="app-subtle truncate text-xs">{decks.find((deck) => deck.id === form.deckId)?.name ?? defaultDeckNames[setup.baseLanguage]}</p>
-          </span>
-          <span className="library-panel-toggle pointer-events-none">
-            <ChevronRight className={`shrink-0 transition-transform ${addWordPanelOpen ? "rotate-90" : ""}`} size={18} />
-          </span>
-        </button>
-
-        {addWordPanelOpen ? (
-          <div className="app-expand grid gap-3">
-        <div className="flex items-center justify-end">
-          <button className="app-button app-button-ghost app-button-compact" type="button" onClick={resetWordForm} data-tooltip={t("common.reset")}>
-            {t("common.reset")}
-          </button>
-        </div>
-        <div className="grid gap-2">
-          <Label
-            text={
-              <span className="flex items-center gap-1">
-                <FlagIcon code={setup.targetLanguage} />
-                {t("library.targetText")}
-              </span>
-            }
-          >
-            <input
-              className={`app-input ${duplicateWord || targetMissing ? "app-input-warning" : ""}`}
-              value={form.targetText}
-              onChange={(event) => setForm({ ...form, targetText: event.target.value })}
-              placeholder={t("library.targetPlaceholder")}
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              aria-invalid={targetMissing}
-            />
-            {targetMissing ? <span className="app-warning-text text-xs">{t("library.targetRequired")}</span> : null}
-            {duplicateWord ? <span className="app-warning-text text-xs">{t("library.duplicateInline")}</span> : null}
-          </Label>
-          <button
-            className="app-button app-button-secondary"
-            type="button"
-            onClick={() => fetchSuggestions(false)}
-            disabled={fetching || !form.targetText.trim() || translationLimitReached}
-            data-tooltip={t("library.fetchSuggestions")}
-            data-tooltip-placement="top"
-          >
-            {fetching ? <LoadingIndicator label={t("library.fetchSuggestions")} /> : <Search size={18} />}
-            {t("library.fetchSuggestions")}
-          </button>
-        </div>
-
-        {suggestions.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5" aria-label={t("library.suggestions")}>
-            {suggestions.map((suggestion) => (
-              <button
-                key={`${suggestion.text}-${suggestion.confidence}`}
-                className="app-suggestion inline-flex min-h-8 items-center gap-1 rounded-full border px-2.5 py-1 text-sm font-medium transition-colors"
-                type="button"
-                onClick={() => {
-                  const next = new Set(splitTranslations(form.translations));
-                  next.add(suggestion.text);
-                  setForm({ ...form, translations: [...next].join("; ") });
-                }}
-                data-tooltip={t("library.acceptSuggestion")}
+      {captureDialog === "word" ? (
+        <Modal title={t("library.addWord")} onClose={closeCaptureDialog} closeDisabled={savingWord}>
+          <form className="grid gap-3" onSubmit={saveWord} noValidate>
+            <fieldset className="grid min-w-0 gap-3" disabled={savingWord}>
+              <div className="grid gap-2">
+              <Label
+                text={
+                  <span className="flex items-center gap-1">
+                    <FlagIcon code={setup.targetLanguage} />
+                    {t("library.targetText")}
+                  </span>
+                }
               >
-                {suggestion.text}
-                <span className="rounded-full bg-black/10 px-1.5 text-[0.68rem]">{Math.round(suggestion.confidence * 100)}%</span>
+                <input
+                  ref={wordInput}
+                  data-autofocus
+                  className={`app-input ${duplicateWord || targetMissing ? "app-input-warning" : ""}`}
+                  value={form.targetText}
+                  onChange={(event) => {
+                    clearSuggestions();
+                    setWordStatus("");
+                    setForm({ ...form, targetText: event.target.value });
+                  }}
+                  placeholder={t("library.targetPlaceholder")}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  aria-invalid={targetMissing}
+                />
+                {targetMissing ? <span className="app-warning-text text-xs">{t("library.targetRequired")}</span> : null}
+                {duplicateWord ? <span className="app-warning-text text-xs">{t("library.duplicateInline")}</span> : null}
+              </Label>
+                <button
+                  className="app-button app-button-secondary app-button-compact justify-self-end"
+                  type="button"
+                  onClick={() => fetchSuggestions(false)}
+                  disabled={fetching || !form.targetText.trim() || translationLimitReached}
+                  data-tooltip={t("library.fetchSuggestions")}
+                  data-tooltip-placement="top"
+                >
+                  {fetching ? <LoadingIndicator label={t("library.fetchSuggestions")} /> : <Search size={18} />}
+                  {t("library.fetchSuggestions")}
+                </button>
+              </div>
+
+              {suggestions.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5" aria-label={t("library.suggestions")}>
+                  {suggestions.map((suggestion) => (
+                    <button
+                      key={`${suggestion.text}-${suggestion.confidence}`}
+                      className="app-suggestion inline-flex min-h-8 items-center gap-1 rounded-full border px-2.5 py-1 text-sm font-medium transition-colors"
+                      type="button"
+                      onClick={() => {
+                        const next = new Set(splitTranslations(form.translations));
+                        next.add(suggestion.text);
+                        setForm({ ...form, translations: [...next].join("; ") });
+                      }}
+                      data-tooltip={t("library.acceptSuggestion")}
+                    >
+                      {suggestion.text}
+                      <span className="rounded-full bg-black/10 px-1.5 text-[0.68rem]">{Math.round(suggestion.confidence * 100)}%</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="grid gap-1">
+                <Label
+                  text={
+                    <span className="flex items-center gap-1">
+                      <FlagIcon code={setup.baseLanguage} />
+                      {t("common.translations")}
+                    </span>
+                  }
+                >
+                  <input
+                    className={`app-input ${translationsMissing ? "app-input-warning" : ""}`}
+                    value={form.translations}
+                    onChange={(event) => setForm({ ...form, translations: event.target.value })}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    aria-invalid={translationsMissing}
+                    aria-describedby={wordTranslationHintId}
+                  />
+                  {translationsMissing ? <span className="app-warning-text text-xs">{t("library.translationsRequired")}</span> : null}
+                </Label>
+                <p id={wordTranslationHintId} className="app-muted text-xs">{t("library.translationHint")}</p>
+              </div>
+
+              <div className="library-capture-options">
+                <AppSelect
+                  label={t("common.deck")}
+                  value={form.deckId}
+                  compact
+                  disabled={savingWord}
+                  placement="above"
+                  wrap
+                  options={decks.map((deck) => ({ value: deck.id, label: deck.name }))}
+                  onChange={(deckId) => setForm({ ...form, deckId })}
+                />
+                <Label text={`${t("common.notes")} (${t("common.optional")})`}>
+                  <textarea
+                    className="app-input library-note-input"
+                    value={form.notes}
+                    onChange={(event) => setForm({ ...form, notes: event.target.value })}
+                    placeholder={t("library.notesPlaceholder")}
+                    autoCapitalize="sentences"
+                  />
+                </Label>
+              </div>
+
+              <div
+                className={`flex items-center justify-between gap-3 rounded-md border px-2.5 py-1.5 text-xs ${
+                  translationLimitReached
+                    ? "app-danger-surface"
+                    : translationQuotaPercent >= 80
+                      ? "app-warning"
+                      : "border-[color:var(--border-subtle)] bg-[var(--subpanel-bg)] app-muted"
+                }`}
+                data-tooltip={t("settings.usage")}
+              >
+                <span>{t("settings.usage")}</span>
+                <span className="font-semibold">
+                  {translationRemaining} / {myMemoryDailyLimit} {t("settings.requestsRemaining")}
+                </span>
+              </div>
+            </fieldset>
+            <div className="app-divider flex flex-wrap items-center justify-end gap-2 border-t pt-3">
+              <p className="app-muted mr-auto text-sm" role="status">{wordStatus}</p>
+              <button className="app-button app-button-ghost" type="button" onClick={resetWordForm} disabled={savingWord}>
+                {t("common.reset")}
               </button>
-            ))}
-          </div>
-        ) : null}
-        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-          <Label
-            text={
-              <span className="flex items-center gap-1">
-                <FlagIcon code={setup.baseLanguage} />
-                {t("common.translations")}
-              </span>
-            }
-          >
-            <input
-              className={`app-input ${translationsMissing ? "app-input-warning" : ""}`}
-              value={form.translations}
-              onChange={(event) => setForm({ ...form, translations: event.target.value })}
-              placeholder={t("library.translationHint")}
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              aria-invalid={translationsMissing}
-            />
-            {translationsMissing ? <span className="app-warning-text text-xs">{t("library.translationsRequired")}</span> : null}
-          </Label>
-        </div>
-
-        <div className="library-capture-options">
-          <AppSelect
-            label={t("common.deck")}
-            value={form.deckId}
-            compact
-            options={decks.map((deck) => ({ value: deck.id, label: deck.name }))}
-            onChange={(deckId) => setForm({ ...form, deckId })}
-          />
-          <Label text={`${t("common.notes")} (${t("common.optional")})`}>
-            <textarea
-              className="app-input library-note-input"
-              value={form.notes}
-              onChange={(event) => setForm({ ...form, notes: event.target.value })}
-              placeholder={t("library.notesPlaceholder")}
-              autoCapitalize="sentences"
-            />
-          </Label>
-          <button className="app-button app-button-primary" type="submit" data-tooltip={t("common.add")}>
-            <Plus size={18} />
-            {t("common.add")}
-          </button>
-        </div>
-
-        <div
-          className={`flex items-center justify-between gap-3 rounded-md border px-2.5 py-1.5 text-xs ${
-            translationLimitReached
-              ? "app-danger-surface"
-              : translationQuotaPercent >= 80
-                ? "app-warning"
-                : "border-[color:var(--border-subtle)] bg-[var(--subpanel-bg)] app-muted"
-          }`}
-          data-tooltip={t("settings.usage")}
-        >
-          <span>{t("settings.usage")}</span>
-          <span className="font-semibold">
-            {translationRemaining} / {myMemoryDailyLimit} {t("settings.requestsRemaining")}
-          </span>
-        </div>
-
-          </div>
-        ) : null}
-      </form>
+              <button className="app-button app-button-primary" type="submit" disabled={savingWord}>
+                {savingWord ? <LoadingIndicator label={t("common.add")} /> : <Plus size={18} />}
+                {t("common.add")}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
 
       {editingWord ? (
         <div className="modal-overlay" role="presentation">
@@ -1998,7 +2049,9 @@ function DecksView({
   const { t } = useTranslation();
   const confirm = useConfirm();
   const [deckName, setDeckName] = useState("");
-  const [createToolsOpen, setCreateToolsOpen] = useState(false);
+  const [createDeckOpen, setCreateDeckOpen] = useState(false);
+  const [creatingDeck, setCreatingDeck] = useState(false);
+  const [createDeckStatus, setCreateDeckStatus] = useState("");
   const [renamingDeck, setRenamingDeck] = useState<Deck | null>(null);
   const [renameDeckName, setRenameDeckName] = useState("");
   const [selectedWordIds, setSelectedWordIds] = useState<string[]>([]);
@@ -2017,7 +2070,7 @@ function DecksView({
 
   async function addDeck(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!deckName.trim()) {
+    if (!deckName.trim() || creatingDeck) {
       return;
     }
 
@@ -2031,24 +2084,30 @@ function DecksView({
       updatedAt: timestamp
     };
 
-    await db.transaction("rw", db.decks, db.words, async () => {
-      await db.decks.add(deck);
-      await Promise.all(
-        selectedWordIds.map(async (wordId) => {
-          const word = await db.words.get(wordId);
-          if (!word) {
-            return;
-          }
-          await db.words.update(wordId, {
-            deckIds: mergeDeckIds(word.deckIds ?? [word.deckId], deck.id),
-            updatedAt: timestamp
-          });
-        })
-      );
-    });
-    setDeckName("");
-    setSelectedWordIds([]);
-    setDeckWordSearch("");
+    setCreatingDeck(true);
+    setCreateDeckStatus("");
+    try {
+      await db.transaction("rw", db.decks, db.words, async () => {
+        await db.decks.add(deck);
+        await Promise.all(
+          selectedWordIds.map(async (wordId) => {
+            const word = await db.words.get(wordId);
+            if (!word) return;
+            await db.words.update(wordId, {
+              deckIds: mergeDeckIds(word.deckIds ?? [word.deckId], deck.id),
+              updatedAt: timestamp
+            });
+          })
+        );
+      });
+    } catch {
+      setCreateDeckStatus(t("status.saveFailed"));
+      return;
+    } finally {
+      setCreatingDeck(false);
+    }
+    resetDeckCreation();
+    setCreateDeckOpen(false);
     onStatus(t("status.saved"));
     await onRefresh();
   }
@@ -2120,21 +2179,33 @@ function DecksView({
     setDeckName("");
     setSelectedWordIds([]);
     setDeckWordSearch("");
+    setCreateDeckStatus("");
+  }
+
+  function closeCreateDeck() {
+    setCreateDeckStatus("");
+    setCreateDeckOpen(false);
   }
 
   return (
     <section className="grid gap-4">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <ViewTitle title={t("decks.title")} />
-        <div className="w-40 max-w-[55%]">
-          <AppSelect
-            value={deckSort}
-            ariaLabel={t("decks.sort")}
-            compact
-            wrap
-            options={(["newest", "nameDescending", "nameAscending"] as const).map((value) => ({ value, label: t(`decks.${value}`) }))}
-            onChange={(value) => onSortChange(value as DeckSort)}
-          />
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="w-36">
+            <AppSelect
+              value={deckSort}
+              ariaLabel={t("decks.sort")}
+              compact
+              wrap
+              options={(["newest", "nameDescending", "nameAscending"] as const).map((value) => ({ value, label: t(`decks.${value}`) }))}
+              onChange={(value) => onSortChange(value as DeckSort)}
+            />
+          </div>
+          <button className="app-button app-button-primary app-button-compact" type="button" aria-haspopup="dialog" onClick={() => setCreateDeckOpen(true)}>
+            <Plus size={17} />
+            {t("decks.createDeck")}
+          </button>
         </div>
       </div>
       {renamingDeck ? (
@@ -2149,50 +2220,17 @@ function DecksView({
           onSubmit={submitDeckRename}
         />
       ) : null}
-      <div className="app-panel grid gap-3 p-3">
-        <button
-          className="flex w-full items-center justify-between gap-3 rounded-xl px-1 py-1.5 text-left transition hover:bg-[var(--dropdown-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-          type="button"
-          aria-label={createToolsOpen ? t("common.collapse") : t("common.expand")}
-          aria-expanded={createToolsOpen}
-          onClick={() => setCreateToolsOpen((open) => !open)}
-          data-tooltip={createToolsOpen ? t("common.collapse") : t("common.expand")}
-        >
-          <span className="min-w-0">
-            <h2 className="app-heading text-sm font-semibold">{t("decks.createDeck")}</h2>
-            <p className="app-subtle truncate text-xs">
-              {selectedWordIds.length} {t("decks.selectedWords")}
-            </p>
-          </span>
-          <span className="library-panel-toggle pointer-events-none">
-            <ChevronRight className={`shrink-0 transition-transform ${createToolsOpen ? "rotate-90" : ""}`} size={18} />
-          </span>
-        </button>
-
-        {createToolsOpen ? (
-          <form className="app-expand app-subpanel grid gap-3 p-3" onSubmit={addDeck}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="app-heading text-sm font-semibold">{t("decks.createDeck")}</h3>
-              <span className="app-chip">{selectedWordIds.length} {t("decks.selectedWords")}</span>
-            </div>
-              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                <Label text={t("decks.deckName")}>
-                  <input className="app-input app-input-compact" value={deckName} onChange={(event) => setDeckName(event.target.value)} placeholder={t("decks.deckNamePlaceholder")} />
-                </Label>
-                <button className="app-button app-button-primary app-button-compact w-fit" type="submit" disabled={!deckName.trim()} data-tooltip={t("decks.createDeck")}>
-                  <Plus size={16} />
-                  {t("decks.createDeck")}
-                </button>
+      {createDeckOpen ? (
+        <Modal title={t("decks.createDeck")} onClose={closeCreateDeck} closeDisabled={creatingDeck}>
+          <form className="grid gap-3" onSubmit={addDeck}>
+            <fieldset className="grid min-w-0 gap-3" disabled={creatingDeck}>
+              <Label text={t("decks.deckName")}>
+                <input className="app-input" value={deckName} onChange={(event) => setDeckName(event.target.value)} placeholder={t("decks.deckNamePlaceholder")} data-autofocus required />
+              </Label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="app-heading text-sm font-semibold">{t("decks.selectWords")}</h3>
+                <span className="app-chip">{selectedWordIds.length} {t("decks.selectedWords")}</span>
               </div>
-              <div className="grid gap-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="app-heading text-sm font-semibold">{t("decks.selectWords")}</h3>
-                  {selectedWordIds.length > 0 ? (
-                    <button className="app-button app-button-ghost app-button-compact" type="button" onClick={resetDeckCreation} data-tooltip={t("common.reset")}>
-                      {t("common.reset")}
-                    </button>
-                  ) : null}
-                </div>
               <Label text={t("common.search")}>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" size={16} />
@@ -2233,10 +2271,20 @@ function DecksView({
                   </label>
                 ))}
               </div>
-              </div>
+            </fieldset>
+            <div className="app-divider flex flex-wrap items-center justify-end gap-2 border-t pt-3">
+              <p className="app-muted mr-auto text-sm" role="status">{createDeckStatus}</p>
+              <button className="app-button app-button-ghost" type="button" onClick={resetDeckCreation} disabled={creatingDeck}>
+                {t("common.reset")}
+              </button>
+              <button className="app-button app-button-primary" type="submit" disabled={creatingDeck || !deckName.trim()}>
+                {creatingDeck ? <LoadingIndicator label={t("decks.createDeck")} /> : <Plus size={17} />}
+                {t("decks.createDeck")}
+              </button>
+            </div>
           </form>
-        ) : null}
-      </div>
+        </Modal>
+      ) : null}
 
       <div className="grid gap-3">
         <div className="grid gap-3">
