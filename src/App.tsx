@@ -51,6 +51,7 @@ import {
   cardDirections,
   defaultDeckNames,
   languageNames,
+  localizedLanguageName,
   myMemoryDailyLimit,
   ratings
 } from "./lib/constants";
@@ -81,7 +82,7 @@ import { fetchTranslationSuggestions, getTodayTranslationUsage } from "./lib/tra
 import { ConfirmationProvider, useConfirm } from "./components/confirmation";
 import { AppSelect } from "./components/AppSelect";
 import { Modal } from "./components/Modal";
-import { FlagIcon, HeaderSelect, Label, NavButton, ViewTitle } from "./components/ui";
+import { FlagIcon, HeaderSelect, Label, NavButton } from "./components/ui";
 import { VocabularyScanner } from "./components/VocabularyScanner";
 import { normalizeDuplicateText, splitTranslations } from "./lib/vocabulary";
 import {
@@ -96,8 +97,9 @@ import {
   wordStrength
 } from "./lib/progress";
 import { canSpeak, speak } from "./lib/speech";
-import { useBackDismiss } from "./lib/history";
+import { navigateToView, useBackDismiss } from "./lib/history";
 import { trackRatingWrite, waitForPendingRatingWrites } from "./lib/pendingWrites";
+import { closestAnswer, diffAnswer } from "./lib/answerDiff";
 import { MobileTabBar } from "./components/MobileTabBar";
 import { cloudBackupAuthorizationStorageKey, type CloudBackupFile, createGoogleDriveBackupProvider } from "./lib/cloudBackup";
 
@@ -244,31 +246,70 @@ export default function App() {
   function navigate(next: ViewKey) {
     setMobileMenuOpen(false);
     if (next === view) return;
-    window.history.pushState({ view: next }, "", `#${next}`);
+    navigateToView(next);
     setView(next);
   }
 
   useEffect(() => {
-    // On-screen keyboards shrink only the visual viewport on some browsers. Expose its size so
-    // bottom sheets can sit above the keyboard, and keep the focused field in view.
     const viewport = window.visualViewport;
-    if (!viewport) return;
     const root = document.documentElement;
+    const touch = window.matchMedia("(pointer: coarse)");
+    let fullHeight = window.innerHeight;
+    let layoutWidth = window.innerWidth;
+    let keyboardOpen = false;
+    let keyboardResizedViewport = false;
+    let focusFrame = 0;
+
     const update = () => {
-      const keyboardInset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
-      root.style.setProperty("--keyboard-inset", `${Math.round(keyboardInset)}px`);
-      root.style.setProperty("--visual-height", `${Math.round(viewport.height)}px`);
       const focused = document.activeElement;
-      if (focused instanceof HTMLElement && focused.matches("input, textarea") && focused.closest("dialog[open]")) {
+      const textField = focused instanceof HTMLTextAreaElement || (focused instanceof HTMLInputElement &&
+        ["text", "search", "email", "tel", "url", "password", "number"].includes(focused.type));
+      const editing = textField && !focused.readOnly && !focused.disabled && focused.inputMode !== "none";
+      const zoomed = Math.abs((viewport?.scale ?? 1) - 1) > 0.01;
+      const layoutHeight = window.innerHeight;
+      const visualHeight = zoomed ? layoutHeight : viewport?.height ?? layoutHeight;
+      if (!zoomed) {
+        if (window.innerWidth !== layoutWidth || (!editing && !keyboardOpen)) fullHeight = layoutHeight;
+        else fullHeight = Math.max(fullHeight, layoutHeight);
+        layoutWidth = window.innerWidth;
+      }
+
+      // The layout viewport itself shrinks with Chrome's resizes-content mode. The difference
+      // from the pre-keyboard height detects that case as well as a visual-only resize.
+      const keyboardInset = zoomed ? 0 : Math.max(0, layoutHeight - visualHeight - (viewport?.offsetTop ?? 0));
+      const resized = !zoomed && (keyboardInset > 120 || (editing && fullHeight - visualHeight > 120));
+      const open = !zoomed && (resized || (touch.matches && editing));
+      const revealField = (open && !keyboardOpen) || (resized && !keyboardResizedViewport);
+      keyboardOpen = open;
+      keyboardResizedViewport = resized;
+      root.style.setProperty("--keyboard-inset", `${Math.round(keyboardInset)}px`);
+      root.style.setProperty("--visual-height", `${Math.round(visualHeight)}px`);
+      if (open) root.dataset.keyboard = "open";
+      else delete root.dataset.keyboard;
+      if (revealField && editing && focused.closest("dialog[open]")) {
         focused.scrollIntoView({ block: "nearest" });
       }
     };
+    const onFocusChange = () => {
+      window.cancelAnimationFrame(focusFrame);
+      focusFrame = window.requestAnimationFrame(update);
+    };
     update();
-    viewport.addEventListener("resize", update);
-    viewport.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
+    viewport?.addEventListener("resize", update);
+    viewport?.addEventListener("scroll", update);
+    document.addEventListener("focusin", onFocusChange);
+    document.addEventListener("focusout", onFocusChange);
     return () => {
-      viewport.removeEventListener("resize", update);
-      viewport.removeEventListener("scroll", update);
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("resize", update);
+      viewport?.removeEventListener("resize", update);
+      viewport?.removeEventListener("scroll", update);
+      document.removeEventListener("focusin", onFocusChange);
+      document.removeEventListener("focusout", onFocusChange);
+      root.style.removeProperty("--keyboard-inset");
+      root.style.removeProperty("--visual-height");
+      delete root.dataset.keyboard;
     };
   }, []);
 
@@ -638,6 +679,7 @@ export default function App() {
               onStudyRequestHandled={() => setStudyRequest(null)}
               onOpenSwitcher={() => setMobileMenuOpen(true)}
               onOpenDecks={() => navigate("decks")}
+              onStatus={setStatus}
               onAddWords={() => {
                 setCaptureRequest("word");
                 navigate("library");
@@ -876,6 +918,7 @@ function StudyView({
   onOpenSwitcher,
   onOpenDecks,
   onAddWords,
+  onStatus,
   onRefresh
 }: {
   profile: Profile;
@@ -888,6 +931,7 @@ function StudyView({
   onOpenSwitcher: () => void;
   onOpenDecks: () => void;
   onAddWords: () => void;
+  onStatus: (message: string) => void;
   onRefresh: (nextActiveId?: string, showLoading?: boolean) => Promise<void>;
 }) {
   const { t } = useTranslation();
@@ -914,6 +958,8 @@ function StudyView({
   const answerInputRef = useRef<HTMLInputElement>(null);
   const continueRef = useRef<HTMLButtonElement>(null);
   const [ratingOpen, setRatingOpen] = useState(false);
+  // The answer field has focus, so on a phone the keyboard is up: the layout compacts.
+  const [typing, setTyping] = useState(false);
   const advancingRef = useRef(false);
   const answerId = useId();
   const speechAvailable = canSpeak();
@@ -1064,7 +1110,12 @@ function StudyView({
       } catch (error) {
         // Nothing was saved. Keep the card revealed so Continue retries the same rating.
         console.error("Could not save rating for card", cardId, error);
-        if (activeSessionId.current === sessionId && activeCardId.current === cardId) setFailedRating(rating);
+        if (activeSessionId.current === sessionId && activeCardId.current === cardId) {
+          setFailedRating(rating);
+        } else {
+          // The user already left this card, so the message on the card would never be seen.
+          onStatus(t("ui.ratingNotSaved"));
+        }
         return;
       }
       setFailedRating(null);
@@ -1173,6 +1224,8 @@ function StudyView({
     const viewport = window.visualViewport;
     if (!session?.current || session.revealed || !viewport) return;
     const keepPromptVisible = () => {
+      // A resize from pinch-zoom is not the keyboard; leave the user's zoom and position alone.
+      if (Math.abs(viewport.scale - 1) > 0.01) return;
       if (document.activeElement === answerInputRef.current) window.scrollTo({ top: 0 });
     };
     viewport.addEventListener("resize", keepPromptVisible);
@@ -1314,8 +1367,14 @@ function StudyView({
         })
       : [];
     const suggestedInterval = previews.find((preview) => preview.rating === suggested)?.interval;
+    // When the answer wasn't exactly right, mark the wrong letters in it and the missing ones in the
+    // closest correct answer.
+    const comparedAnswer = session.revealed && session.answer && session.match !== "correct"
+      ? closestAnswer(session.answer, accepted)
+      : undefined;
+    const answerDiff = comparedAnswer ? diffAnswer(session.answer.trim(), comparedAnswer) : undefined;
     return (
-      <section className="study-session" aria-label={t("study.title")}>
+      <section className={`study-session ${typing && !session.revealed ? "study-session-typing" : ""}`} aria-label={t("study.title")}>
         <div className="study-session-top">
           <button className="study-round-button" type="button" onClick={endSession} aria-label={t("study.abandon")} data-tooltip={t("study.abandon")}>
             <X size={20} />
@@ -1333,25 +1392,102 @@ function StudyView({
           <span className="study-progress-count">{session.reviewed + 1}/{total}</span>
         </div>
 
+        {/* The card turns over to show the answer side, like a flashcard. A new card starts face up. */}
+        <div key={session.current.card.id} className={`study-flip ${session.revealed ? "study-flip-revealed" : ""}`}>
+          <div className="study-flip-inner">
+              <div className="study-prompt-card study-flip-face study-flip-front" inert={session.revealed}>
+                <div className="study-prompt-meta">
+                  <span className="study-chip">
+                    <FlagIcon code={promptLanguage} />
+                    {directionLabel(session.current.card.direction, t)}
+                  </span>
+                  <span className="study-chip study-chip-accent">
+                    {session.current.card.reviewCount === 0 ? t("common.new") : t("ui.review")}
+                  </span>
+                </div>
+                <p className="study-prompt" lang={promptLanguage}>{prompt}</p>
+                {speechAvailable ? (
+                  <button className="study-speak" type="button" onClick={() => speak(prompt, promptLanguage)} aria-label={t("ui.playPronunciation")} data-tooltip={t("ui.playPronunciation")}>
+                    <Volume2 size={22} />
+                  </button>
+                ) : null}
+              </div>
+              <div className={`study-result study-result-${tone} study-flip-face study-flip-back`} inert={!session.revealed}>
+                {session.revealed ? (
+                  <>
+                  <div className="study-result-head">
+                    <span className="study-result-icon" aria-hidden="true">
+                      {tone === "wrong" ? <X size={22} strokeWidth={2.6} /> : <Check size={22} strokeWidth={2.6} />}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="study-result-title">
+                        {tone === "correct" ? t("ui.correct") : tone === "close" ? t("ui.almost") : t("ui.notQuite")}
+                      </p>
+                      {session.answer ? null : <p className="app-muted text-sm">{t("ui.noAnswer")}</p>}
+                    </div>
+                  </div>
+                  {session.answer && session.match !== "correct" ? (
+                    <div className="study-your-answer">
+                      <span className="study-answer-caption">{t("ui.yourAnswer")}</span>
+                      <span className="study-your-answer-text" lang={answerLanguage}>
+                        {answerDiff
+                          ? answerDiff.typed.map((part, index) => (
+                              <span key={index} className={part.differs ? "diff-wrong" : undefined}>{part.text}</span>
+                            ))
+                          : session.answer}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="study-solution">
+                    <span className="app-muted text-sm font-semibold" lang={promptLanguage}>{prompt}</span>
+                    <span className="study-solution-row">
+                      <span className="study-solution-answer" lang={answerLanguage}>
+                        {accepted.map((answer, index) => (
+                          <span key={answer}>
+                            {index > 0 ? " / " : null}
+                            {answerDiff && answer === comparedAnswer
+                              ? answerDiff.correct.map((part, partIndex) => (
+                                  <span key={partIndex} className={part.differs ? "diff-missing" : undefined}>{part.text}</span>
+                                ))
+                              : answer}
+                          </span>
+                        ))}
+                      </span>
+                      {speechAvailable ? (
+                        <button className="study-speak study-speak-small" type="button" onClick={() => speak(accepted[0] ?? "", answerLanguage)} aria-label={t("ui.playPronunciation")} data-tooltip={t("ui.playPronunciation")}>
+                          <Volume2 size={20} />
+                        </button>
+                      ) : null}
+                    </span>
+                  </div>
+                  {session.current.word.notes ? (
+                    <p className="app-muted text-sm leading-relaxed">
+                      <strong className="app-heading">{t("common.notes")}:</strong> {session.current.word.notes}
+                    </p>
+                  ) : null}
+                  {session.match === "close" ? (
+                    <label className="flex min-h-11 items-center gap-2 text-sm font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={session.closeAccepted}
+                        onChange={(event) =>
+                          setSession({
+                            ...session,
+                            closeAccepted: event.target.checked,
+                            selectedRating: defaultRatingForMatch(session.match ?? "wrong", event.target.checked)
+                          })
+                        }
+                      />
+                      {t("study.acceptClose")}
+                    </label>
+                  ) : null}
+                  </>
+                ) : null}
+              </div>
+          </div>
+        </div>
         {!session.revealed ? (
           <>
-            <div className="study-prompt-card">
-              <div className="study-prompt-meta">
-                <span className="study-chip">
-                  <FlagIcon code={promptLanguage} />
-                  {directionLabel(session.current.card.direction, t)}
-                </span>
-                <span className="study-chip study-chip-accent">
-                  {session.current.card.reviewCount === 0 ? t("common.new") : t("ui.review")}
-                </span>
-              </div>
-              <p className="study-prompt" lang={promptLanguage}>{prompt}</p>
-              {speechAvailable ? (
-                <button className="study-speak" type="button" onClick={() => speak(prompt, promptLanguage)} aria-label={t("ui.playPronunciation")} data-tooltip={t("ui.playPronunciation")}>
-                  <Volume2 size={22} />
-                </button>
-              ) : null}
-            </div>
             <form
               className="study-answer"
               onSubmit={(event) => {
@@ -1366,6 +1502,8 @@ function StudyView({
               <input
                 id={answerId}
                 className="app-input study-answer-input"
+                onFocus={() => setTyping(true)}
+                onBlur={() => setTyping(false)}
                 value={session.answer}
                 onChange={(event) => setSession({ ...session, answer: event.target.value })}
                 placeholder={t("study.answerPlaceholder")}
@@ -1406,53 +1544,6 @@ function StudyView({
           </>
         ) : (
           <>
-            <div className={`study-result study-result-${tone}`}>
-              <div className="study-result-head">
-                <span className="study-result-icon" aria-hidden="true">
-                  {tone === "wrong" ? <X size={22} strokeWidth={2.6} /> : <Check size={22} strokeWidth={2.6} />}
-                </span>
-                <div className="min-w-0">
-                  <p className="study-result-title">
-                    {tone === "correct" ? t("ui.correct") : tone === "close" ? t("ui.almost") : t("ui.notQuite")}
-                  </p>
-                  <p className="app-muted text-sm">
-                    {session.answer ? t("ui.youTyped", { answer: session.answer }) : t("ui.noAnswer")}
-                  </p>
-                </div>
-              </div>
-              <div className="study-solution">
-                <span className="app-muted text-sm font-semibold" lang={promptLanguage}>{prompt}</span>
-                <span className="study-solution-row">
-                  <span className="study-solution-answer" lang={answerLanguage}>{accepted.join(" / ")}</span>
-                  {speechAvailable ? (
-                    <button className="study-speak study-speak-small" type="button" onClick={() => speak(accepted[0] ?? "", answerLanguage)} aria-label={t("ui.playPronunciation")} data-tooltip={t("ui.playPronunciation")}>
-                      <Volume2 size={20} />
-                    </button>
-                  ) : null}
-                </span>
-              </div>
-              {session.current.word.notes ? (
-                <p className="app-muted text-sm leading-relaxed">
-                  <strong className="app-heading">{t("common.notes")}:</strong> {session.current.word.notes}
-                </p>
-              ) : null}
-              {session.match === "close" ? (
-                <label className="flex min-h-11 items-center gap-2 text-sm font-semibold">
-                  <input
-                    type="checkbox"
-                    checked={session.closeAccepted}
-                    onChange={(event) =>
-                      setSession({
-                        ...session,
-                        closeAccepted: event.target.checked,
-                        selectedRating: defaultRatingForMatch(session.match ?? "wrong", event.target.checked)
-                      })
-                    }
-                  />
-                  {t("study.acceptClose")}
-                </label>
-              ) : null}
-            </div>
             <div className="study-continue">
               {failedRating ? (
                 <div className="study-error" role="alert">
@@ -2087,14 +2178,14 @@ function LibraryView({
             />
           </div>
           <div hidden={captureDialog !== "word"}>
-          <form className="grid gap-4" onSubmit={saveWord} noValidate>
+          <form className="capture-form grid gap-4" onSubmit={saveWord} noValidate>
             {lastAdded ? (
               <p className="capture-success" role="status">
                 <Check size={18} strokeWidth={2.6} aria-hidden="true" />
                 <span>{t("ui.addedTo", { word: lastAdded.word, deck: lastAdded.deck })}</span>
               </p>
             ) : null}
-            <fieldset className="grid min-w-0 gap-4" disabled={savingWord}>
+            <fieldset className="capture-fields grid min-w-0 gap-4" disabled={savingWord}>
               <div className="grid gap-2">
                 <Label
                   text={
@@ -2181,7 +2272,7 @@ function LibraryView({
                   aria-describedby={wordTranslationHintId}
                 />
                 {translationsMissing ? <span className="app-warning-text text-xs">{t("library.translationsRequired")}</span> : null}
-                <p id={wordTranslationHintId} className="app-muted text-xs">{t("library.translationHint")}</p>
+                <p id={wordTranslationHintId} className="capture-hint app-muted text-xs">{t("library.translationHint")}</p>
               </div>
 
               <div className="capture-options">
@@ -2215,7 +2306,7 @@ function LibraryView({
               ) : null}
             </fieldset>
             <div className="capture-footer">
-              <p className={`text-xs ${translationLimitReached ? "app-warning-text" : "app-muted"}`}>
+              <p className={`capture-lookups text-xs ${translationLimitReached ? "app-warning-text" : "app-muted"}`}>
                 {t("ui.lookupsLeft", { count: translationRemaining })}
               </p>
               <p className="app-muted text-sm" role="status">{wordStatus}</p>
@@ -3324,6 +3415,17 @@ function SettingsView({
     }
   }
 
+  function openNewPair() {
+    // Start on a combination this profile doesn't have yet, so Create never duplicates a pair.
+    const base = activeSetup?.baseLanguage ?? setupBaseLanguage;
+    const taken = new Set(learningSetups.filter((setup) => setup.baseLanguage === base).map((setup) => setup.targetLanguage));
+    const target = languageCodes.find((code) => code !== base && !taken.has(code)) ?? setupTargetLanguage;
+    setSetupBaseLanguage(base);
+    setSetupTargetLanguage(target);
+    setSetupName("");
+    setCreatingSetup(true);
+  }
+
   const translationsUsed = usage?.count ?? 0;
   const translationPercent = Math.min(100, Math.round((translationsUsed / myMemoryDailyLimit) * 100));
   const editingSetup = learningSetups.find((setup) => setup.id === editingSetupLanguagesId) ?? null;
@@ -3380,6 +3482,17 @@ function SettingsView({
           <form
             className="grid gap-4"
             onSubmit={async (event) => {
+              event.preventDefault();
+              const existing = learningSetups.find(
+                (candidate) => candidate.baseLanguage === setupBaseLanguage && candidate.targetLanguage === setupTargetLanguage
+              );
+              if (existing) {
+                // Switch to the pair the user already has rather than creating a duplicate.
+                setCreatingSetup(false);
+                onStatus(t("ui.pairExists"));
+                await onSwitchSetup(existing.id);
+                return;
+              }
               await createSetup(event);
               setCreatingSetup(false);
             }}
@@ -3522,22 +3635,26 @@ function SettingsView({
                       type="button"
                       role="menuitem"
                       disabled={wordCount > 0}
-                      title={wordCount > 0 ? t("setup.languagesLocked") : undefined}
                       onClick={() => { setOpenSetupMenuId(null); beginLanguageEdit(setup); }}
                     >
                       <Languages size={17} />
-                      {t("setup.editLanguages")}
+                      <span className="menu-item-text">
+                        {t("setup.editLanguages")}
+                        {wordCount > 0 ? <span className="menu-item-hint">{t("setup.languagesLocked")}</span> : null}
+                      </span>
                     </button>
                     <button
                       type="button"
                       role="menuitem"
                       className="app-text-danger"
                       disabled={learningSetups.length <= 1}
-                      title={learningSetups.length <= 1 ? t("setup.keepOne") : undefined}
                       onClick={() => { setOpenSetupMenuId(null); void removeSetup(setup); }}
                     >
                       <Trash2 size={17} />
-                      {t("common.delete")}
+                      <span className="menu-item-text">
+                        {t("common.delete")}
+                        {learningSetups.length <= 1 ? <span className="menu-item-hint">{t("setup.keepOne")}</span> : null}
+                      </span>
                     </button>
                   </div>
                 ) : null}
@@ -3545,7 +3662,7 @@ function SettingsView({
             </div>
           );
         })}
-        <button className="settings-row" type="button" aria-haspopup="dialog" onClick={() => setCreatingSetup(true)}>
+        <button className="settings-row" type="button" aria-haspopup="dialog" onClick={openNewPair}>
           <span className="settings-row-icon" aria-hidden="true"><Plus size={18} /></span>
           <span className="settings-row-text"><span className="settings-row-title">{t("ui.newLanguagePair")}</span></span>
           <ChevronRight className="settings-row-chevron" size={18} aria-hidden="true" />
@@ -4422,20 +4539,6 @@ function setupBaseContext(baseLanguage: LanguageCode, locale = "en", label = "Fr
 
 function languageOptionLabel(code: LanguageCode, locale = "en"): string {
   return `${localizedLanguageName(code, locale)} (${code.toUpperCase()})`;
-}
-
-function localizedLanguageName(code: LanguageCode, locale = "en"): string {
-  try {
-    const displayNames = new Intl.DisplayNames([locale], { type: "language" });
-    const name = displayNames.of(code);
-    return name ? capitalizeFirst(name) : languageNames[code];
-  } catch {
-    return languageNames[code];
-  }
-}
-
-function capitalizeFirst(value: string): string {
-  return value.length > 0 ? `${value[0].toLocaleUpperCase()}${value.slice(1)}` : value;
 }
 
 function getPrompt(studyCard: StudyCard): string {

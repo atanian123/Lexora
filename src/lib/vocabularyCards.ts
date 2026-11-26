@@ -1,4 +1,4 @@
-import type { Worker } from "tesseract.js";
+import type { Page } from "tesseract.js";
 
 interface Span {
   start: number;
@@ -17,13 +17,36 @@ export interface RecognizedVocabularyCard {
   second: string;
 }
 
-export async function recognizeVocabularyCards(source: HTMLCanvasElement, worker: Worker, includeSecondLine: boolean) {
+type RecognizeSheet = (sheet: HTMLCanvasElement, lineIndex: 0 | 1) => Promise<Page>;
+
+export async function recognizeVocabularyCards(source: HTMLCanvasElement, includeSecondLine: boolean, recognizeSheet: RecognizeSheet) {
   const sourceContext = source.getContext("2d");
   const layout = sourceContext && findVocabularyCards(sourceContext.getImageData(0, 0, source.width, source.height));
   if (!layout) return;
 
-  const { cards, ink, cardHeight } = layout;
-  const lines = cards.flatMap((card) => includeSecondLine ? card : card.slice(0, 1));
+  const { cards } = layout;
+  const firstLines = cards.map(([first]) => first);
+  const firstText = await recognizeCardLines(source.width, layout, firstLines, (sheet) => recognizeSheet(sheet, 0));
+  const secondText = includeSecondLine
+    ? await recognizeCardLines(source.width, layout, cards.flatMap(([, second]) => second ? [second] : []), (sheet) => recognizeSheet(sheet, 1))
+    : undefined;
+
+  const recognized: RecognizedVocabularyCard[] = cards.map(([first, second]) => ({
+    first: firstText.get(first) ?? "",
+    second: second ? secondText?.get(second) ?? "" : ""
+  })).filter(({ first, second }) => first || second);
+  if (recognized.length) return recognized;
+}
+
+async function recognizeCardLines(
+  sourceWidth: number,
+  { ink, cardHeight }: { ink: Uint8Array; cardHeight: number },
+  lines: CardLine[],
+  recognizeSheet: (sheet: HTMLCanvasElement) => Promise<Page>
+) {
+  const textByLine = new Map<CardLine, string>();
+  if (!lines.length) return textByLine;
+
   // Give each text line a white margin and keep its position so missing lines cannot shift later pairs.
   const padding = Math.max(10, Math.round(cardHeight * 0.08));
   const sheet = document.createElement("canvas");
@@ -32,7 +55,7 @@ export async function recognizeVocabularyCards(source: HTMLCanvasElement, worker
 
   try {
     const context = sheet.getContext("2d", { alpha: false });
-    if (!context) return;
+    if (!context) return textByLine;
     const image = context.createImageData(sheet.width, sheet.height);
     image.data.fill(255);
     let top = padding;
@@ -40,7 +63,7 @@ export async function recognizeVocabularyCards(source: HTMLCanvasElement, worker
       const bottom = top + line.bottom - line.top;
       for (let y = line.top; y < line.bottom; y += 1) {
         for (let x = line.left; x < line.right; x += 1) {
-          const shade = 255 - ink[y * source.width + x];
+          const shade = 255 - ink[y * sourceWidth + x];
           const offset = ((top + y - line.top) * sheet.width + padding + x - line.left) * 4;
           image.data.fill(shade, offset, offset + 3);
         }
@@ -51,8 +74,7 @@ export async function recognizeVocabularyCards(source: HTMLCanvasElement, worker
     });
     context.putImageData(image, 0, 0);
 
-    const { data } = await worker.recognize(sheet, {}, { text: true, blocks: true });
-    const textByLine = new Map<CardLine, string>();
+    const data = await recognizeSheet(sheet);
     for (const block of data.blocks ?? []) {
       for (const paragraph of block.paragraphs) {
         for (const { bbox, text } of paragraph.lines) {
@@ -66,11 +88,7 @@ export async function recognizeVocabularyCards(source: HTMLCanvasElement, worker
       }
     }
 
-    const recognized: RecognizedVocabularyCard[] = cards.map(([first, second]) => ({
-      first: textByLine.get(first) ?? "",
-      second: second ? textByLine.get(second) ?? "" : ""
-    })).filter(({ first, second }) => first || second);
-    if (recognized.length) return recognized;
+    return textByLine;
   } finally {
     sheet.width = sheet.height = 0;
   }

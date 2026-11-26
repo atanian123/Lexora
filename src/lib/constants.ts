@@ -43,3 +43,17 @@ export const ratings: ReviewRating[] = ["again", "hard", "good", "easy"];
 export const myMemoryDailyLimit = 500;
 
 export const activeProfileStorageKey = "lexora.activeProfileId";
+
+export function localizedLanguageName(code: LanguageCode, locale = "en"): string {
+  try {
+    const displayNames = new Intl.DisplayNames([locale], { type: "language" });
+    const name = displayNames.of(code);
+    return name ? capitalizeFirst(name) : languageNames[code];
+  } catch {
+    return languageNames[code];
+  }
+}
+
+function capitalizeFirst(value: string): string {
+  return value.length > 0 ? `${value[0].toLocaleUpperCase()}${value.slice(1)}` : value;
+}

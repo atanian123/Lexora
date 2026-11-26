@@ -112,10 +112,14 @@ export function AppSelect({
       viewport?.removeEventListener("resize", position);
       viewport?.removeEventListener("scroll", position);
       dialog.removeEventListener("animationend", position);
+      // Close instantly. A fade-out would play after the panel leaves the top layer, back at its
+      // in-page spot under or above the trigger, so the list would visibly jump before vanishing.
+      panel.style.cssText = "transition: none";
       if (panel.matches(":popover-open")) panel.hidePopover();
       panel.removeAttribute("popover");
-      panel.removeAttribute("style");
       delete panel.dataset.dialogMenu;
+      void panel.offsetHeight;
+      requestAnimationFrame(() => panel.style.removeProperty("transition"));
     };
   }, [expanded, options.length, placement]);
 

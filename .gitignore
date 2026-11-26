@@ -4,3 +4,5 @@ dist-ssr
 *.local
 .vite
 .DS_Store
+/.codex-attachments/
+/.lexora-combined-review/

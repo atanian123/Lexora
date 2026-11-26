@@ -1,8 +1,9 @@
-import { Camera, ImagePlus, Plus, Trash2 } from "lucide-react";
-import { type ChangeEvent, type SubmitEvent, useEffect, useRef, useState } from "react";
+import { liveQuery } from "dexie";
+import { ArrowRight, Camera, ImagePlus, Plus, X } from "lucide-react";
+import { type ChangeEvent, type SubmitEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { cardDirections } from "../lib/constants";
+import { cardDirections, localizedLanguageName } from "../lib/constants";
 import { createInitialCardState, db } from "../lib/db";
 import { createId, nowIso } from "../lib/ids";
 import { fetchScanTranslation } from "../lib/translation";
@@ -10,7 +11,7 @@ import { normalizeDuplicateText, splitTranslations } from "../lib/vocabulary";
 import type { ScanMode, ScannedWord } from "../lib/vocabularyScan";
 import type { Deck, LearningSetup, WordEntry } from "../types";
 import { AppSelect } from "./AppSelect";
-import { Label } from "./ui";
+import { FlagIcon } from "./ui";
 
 interface ReviewRow extends ScannedWord {
   id: string;
@@ -28,7 +29,7 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
   onSavingChange?: (saving: boolean) => void;
   onImported: (count: number, duplicates: number) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const photoInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const scan = useRef<AbortController | null>(null);
@@ -42,11 +43,42 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
   const [translating, setTranslating] = useState<{ current: number; total: number }>();
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [saved, setSaved] = useState<Set<string>>(new Set());
   const busy = reading !== null || translating !== undefined || saving;
   const destination = decks.some((deck) => deck.id === deckId) ? deckId : defaultDeckId;
-  const incomplete = rows?.some((row) => !row.targetText.trim() || splitTranslations(row.translations).length === 0);
 
   useEffect(() => () => scan.current?.abort(), []);
+
+  const hasRows = rows !== null;
+  useEffect(() => {
+    if (!hasRows) return;
+    const library = liveQuery(async () => {
+      const words = await db.words.where("learningSetupId").equals(setup.id).toArray();
+      return new Set(words.map((word) => normalizeDuplicateText(word.targetText)));
+    }).subscribe({
+      next: setSaved,
+      error: () => setSaved(new Set())
+    });
+    return () => library.unsubscribe();
+  }, [hasRows, setup.id]);
+
+  // Rows that will be skipped: already saved, or repeating an earlier row in this list.
+  const skipped = useMemo(() => {
+    const result = new Set<string>();
+    const seen = new Set(saved);
+    for (const row of rows ?? []) {
+      const key = normalizeDuplicateText(row.targetText);
+      if (!key) continue;
+      if (seen.has(key)) result.add(row.id);
+      seen.add(key);
+    }
+    return result;
+  }, [rows, saved]);
+  const importable = (rows?.length ?? 0) - skipped.size;
+  // Skipped rows are never imported, so a missing translation there doesn't block the import.
+  const incomplete = rows?.some(
+    (row) => !skipped.has(row.id) && (!row.targetText.trim() || splitTranslations(row.translations).length === 0)
+  );
 
   useEffect(() => {
     onSavingChange?.(saving);
@@ -74,7 +106,7 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
       const { recognizeVocabulary, parseScannedVocabulary } = await import("../lib/vocabularyScan");
       signal.throwIfAborted();
       const languages = mode === "paired" ? [setup.targetLanguage, setup.baseLanguage] : [setup.targetLanguage];
-      const text = await recognizeVocabulary(file, languages, signal, setReading);
+      const text = await recognizeVocabulary(file, languages, signal, setReading, translationFirst);
       const recognized = parseScannedVocabulary(text, mode, translationFirst).map((row) => ({ ...row, id: createId("scan") }));
       if (recognized.length === 0) {
         setMessage(t("scan.noText"));
@@ -137,19 +169,24 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
 
     setSaving(true);
     setMessage("");
-    let count: number;
+    let result: { count: number | null; saved: Set<string> };
     try {
-      count = await db.transaction("rw", db.decks, db.words, db.cards, async () => {
+      result = await db.transaction("rw", db.decks, db.words, db.cards, async () => {
         const deck = await db.decks.get(destination);
         if (!deck || deck.learningSetupId !== setup.id) throw new Error("Destination deck is no longer available.");
 
         const existing = await db.words.where("learningSetupId").equals(setup.id).toArray();
-        const seen = new Set(existing.map((word) => normalizeDuplicateText(word.targetText)));
+        const saved = new Set(existing.map((word) => normalizeDuplicateText(word.targetText)));
+        const seen = new Set(saved);
         const timestamp = nowIso();
         const additions: WordEntry[] = [];
         for (const row of rows) {
-          const key = normalizeDuplicateText(row.targetText);
+          const targetText = row.targetText.trim();
+          const key = normalizeDuplicateText(targetText);
           if (seen.has(key)) continue;
+          const translations = splitTranslations(row.translations);
+          // A row can become importable after its saved duplicate is deleted elsewhere.
+          if (!targetText || !translations.length) return { count: null, saved };
           seen.add(key);
           additions.push({
             id: createId("word"),
@@ -157,8 +194,8 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
             learningSetupId: setup.id,
             deckId: deck.id,
             deckIds: [deck.id],
-            targetText: row.targetText.trim(),
-            translations: splitTranslations(row.translations),
+            targetText,
+            translations,
             notes: "",
             createdAt: timestamp,
             updatedAt: timestamp
@@ -168,14 +205,20 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
           await db.words.bulkAdd(additions);
           await db.cards.bulkAdd(additions.flatMap((word) => cardDirections.map((direction) => createInitialCardState(word, direction, timestamp))));
         }
-        return additions.length;
+        return { count: additions.length, saved };
       });
     } catch {
       setMessage(t("scan.saveFailed"));
       setSaving(false);
       return;
     }
-    onImported(count, rows.length - count);
+    if (result.count === null) {
+      setSaved(result.saved);
+      setMessage(t("scan.translationIncomplete"));
+      setSaving(false);
+      return;
+    }
+    onImported(result.count, rows.length - result.count);
     await onRefresh();
   }
 
@@ -225,37 +268,69 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
           </details>
         ) : null}
         {rows ? (
-          <form className="app-subpanel grid gap-3 p-3" onSubmit={importRows}>
-            <h3 className="app-heading font-semibold">{t("scan.review")}</h3>
+          <form className="scan-review" onSubmit={importRows} noValidate>
+            <div className="scan-review-head">
+              <h3 className="app-heading font-semibold">{t("scan.review")}</h3>
+              <span className="scan-review-count">{rows.length}</span>
+            </div>
             <p className="app-muted text-sm">{t("scan.reviewHint")}</p>
-            {rows.map((row, index) => (
-              <div key={row.id} className="app-divider grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 border-b pb-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                <div className="col-span-2 grid gap-2 sm:col-span-1">
-                  <Label text={t("library.targetText")}>
-                    <input className="app-input" value={row.targetText} disabled={busy} required onChange={(event) => updateRow(row.id, { targetText: event.target.value })} />
-                  </Label>
-                </div>
-                <Label text={t("common.translations")}>
-                  <input className="app-input" value={row.translations} disabled={busy} required onChange={(event) => updateRow(row.id, { translations: event.target.value })} />
-                </Label>
-                <button
-                  className="app-button app-button-danger app-icon-button self-end"
-                  type="button"
-                  disabled={busy}
-                  aria-label={t("scan.removeRow", { number: index + 1 })}
-                  data-tooltip={t("common.delete")}
-                  onClick={() => setRows((current) => current?.filter((item) => item.id !== row.id) ?? null)}
-                >
-                  <Trash2 size={17} />
-                </button>
-              </div>
-            ))}
-            <button className="app-button app-button-secondary w-fit" type="button" disabled={busy} onClick={() => setRows((current) => [...(current ?? []), { id: createId("scan"), targetText: "", translations: "" }])}>
-              <Plus size={17} /> {t("scan.addRow")}
+            <ol className="scan-list">
+              {rows.map((row, index) => {
+                const isSkipped = skipped.has(row.id);
+                const missing = !isSkipped && splitTranslations(row.translations).length === 0;
+                return (
+                  <li key={row.id} className={`scan-row ${isSkipped ? "scan-row-skipped" : ""}`}>
+                    <span className="scan-row-number" aria-hidden="true">{index + 1}</span>
+                    <div className="scan-row-fields">
+                      <input
+                        className="scan-row-input scan-row-target"
+                        value={row.targetText}
+                        disabled={busy}
+                        lang={setup.targetLanguage}
+                        placeholder={localizedLanguageName(setup.targetLanguage, i18n.language)}
+                        aria-label={`${localizedLanguageName(setup.targetLanguage, i18n.language)} ${index + 1}`}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        onChange={(event) => updateRow(row.id, { targetText: event.target.value })}
+                      />
+                      <div className="scan-row-translation">
+                        <ArrowRight size={14} aria-hidden="true" />
+                        <input
+                          className={`scan-row-input ${missing ? "scan-row-input-missing" : ""}`}
+                          value={row.translations}
+                          disabled={busy}
+                          lang={setup.baseLanguage}
+                          placeholder={t("scan.needsTranslation")}
+                          aria-label={`${localizedLanguageName(setup.baseLanguage, i18n.language)} ${index + 1}`}
+                          aria-invalid={missing}
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          onChange={(event) => updateRow(row.id, { translations: event.target.value })}
+                        />
+                      </div>
+                      {isSkipped ? <span className="scan-row-note">{t("scan.alreadySaved")}</span> : null}
+                    </div>
+                    <button
+                      className="scan-row-remove"
+                      type="button"
+                      disabled={busy}
+                      aria-label={t("scan.removeRow", { number: index + 1 })}
+                      onClick={() => setRows((current) => current?.filter((item) => item.id !== row.id) ?? null)}
+                    >
+                      <X size={18} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+            <button className="text-button w-fit" type="button" disabled={busy} onClick={() => setRows((current) => [...(current ?? []), { id: createId("scan"), targetText: "", translations: "" }])}>
+              <Plus size={16} /> {t("scan.addRow")}
             </button>
-            <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,20rem)_auto] sm:justify-between">
+            <div className="scan-import-bar">
               <AppSelect
-                label={t("common.deck")}
+                ariaLabel={t("common.deck")}
                 value={destination}
                 disabled={busy}
                 options={decks.map((deck) => ({ value: deck.id, label: deck.name }))}
@@ -263,8 +338,9 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
                 placement="above"
                 wrap
               />
-              <button className="app-button app-button-primary justify-self-end" type="submit" disabled={busy || !rows.length || incomplete || !destination}>
+              <button className="app-button app-button-primary" type="submit" disabled={busy || importable === 0 || incomplete || !destination}>
                 {t(saving ? "scan.saving" : "scan.importWords")}
+                {!saving ? <span className="scan-import-count">{importable}</span> : null}
               </button>
             </div>
           </form>

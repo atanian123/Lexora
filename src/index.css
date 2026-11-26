@@ -527,6 +527,14 @@ textarea:focus-visible {
   outline: none;
 }
 
+/* Keep text fields large enough to avoid zoom when focusing them in Safari. */
+@media (pointer: coarse) {
+  input.app-input:where(:not([type]), [type="text"], [type="search"], [type="email"], [type="tel"], [type="url"], [type="password"], [type="number"]),
+  textarea.app-input {
+    font-size: max(16px, 1rem);
+  }
+}
+
 .app-input-warning,
 .app-input-warning:focus {
   border-color: var(--warning-border);
@@ -3311,41 +3319,41 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
 /* While typing on a phone the keyboard takes about half the screen: shrink the prompt card
    so the word, the answer field and the accent keys all stay visible above it. */
 @media (max-width: 639px) {
-  .study-session:has(.study-answer-input:focus) {
+  .study-session.study-session-typing {
     min-height: auto;
     gap: 0.6rem;
   }
 
-  .study-session:has(.study-answer-input:focus) .study-prompt-card {
+  .study-session.study-session-typing .study-prompt-card {
     min-height: 0;
     gap: 0.5rem;
     padding: 2.6rem 1rem 0.9rem;
   }
 
-  .study-session:has(.study-answer-input:focus) .study-prompt {
+  .study-session.study-session-typing .study-prompt {
     font-size: clamp(1.6rem, 7.5vw, 2.1rem);
   }
 
-  .study-session:has(.study-answer-input:focus) .study-speak {
+  .study-session.study-session-typing .study-speak {
     width: 2.5rem;
     height: 2.5rem;
   }
 
-  .study-session:has(.study-answer-input:focus) .study-answer {
+  .study-session.study-session-typing .study-answer {
     gap: 0.5rem;
   }
 
-  .study-session:has(.study-answer-input:focus) .accent-key {
+  .study-session.study-session-typing .accent-key {
     min-height: 2.5rem;
   }
 
-  .study-session:has(.study-answer-input:focus) .study-answer-actions {
+  .study-session.study-session-typing .study-answer-actions {
     margin-top: 0;
     padding-top: 0;
   }
 
   /* The bottom bar would otherwise ride up on top of the keyboard. */
-  body:has(.app-main input:focus, .app-main textarea:focus) .mobile-tab-bar {
+  body:has(.app-main input:not([type="checkbox"], [type="radio"], [type="file"]):focus, .app-main textarea:focus) .mobile-tab-bar {
     display: none;
   }
 }
@@ -3634,7 +3642,11 @@ button.settings-row:disabled {
 
 .settings .deck-menu-popup button:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  color: var(--text-muted);
+}
+
+.settings .deck-menu-popup button:disabled > svg {
+  opacity: 0.55;
 }
 
 .study-error {
@@ -3647,4 +3659,373 @@ button.settings-row:disabled {
   color: var(--danger-text);
   font-size: 0.875rem;
   line-height: 1.45;
+}
+
+/* After answering: the learner's own answer, large, with wrong and missing letters marked. */
+.study-your-answer {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.8rem 1rem;
+  border: 2px solid color-mix(in srgb, var(--result-tone) 45%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--result-tone) 8%, var(--surface-card));
+}
+
+.study-answer-caption {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.study-your-answer-text {
+  font-family: var(--display-font);
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  color: var(--text-heading);
+}
+
+.diff-wrong {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--result-wrong) 22%, transparent);
+  color: var(--result-wrong);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+.diff-missing {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--result-correct) 22%, transparent);
+  color: var(--result-correct);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+/* Typing on a phone: the keyboard leaves roughly half the screen, so the prompt becomes one row
+   (word and speaker) and the controls tighten, keeping every control above the keyboard. */
+@media (max-width: 639px) {
+  .study-session.study-session-typing {
+    gap: 0.5rem;
+  }
+
+  .study-session.study-session-typing .study-prompt-meta {
+    display: none;
+  }
+
+  .study-session.study-session-typing .study-prompt-card {
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.7rem 0.75rem 0.7rem 1.1rem;
+    border-radius: 20px;
+  }
+
+  .study-session.study-session-typing .study-prompt {
+    flex: 1;
+    min-width: 0;
+    font-size: clamp(1.5rem, 7vw, 2rem);
+    text-align: left;
+  }
+
+  .study-session.study-session-typing .study-answer-label {
+    font-size: 0.8125rem;
+  }
+
+  .study-session.study-session-typing .app-input.study-answer-input {
+    min-height: 3.1rem;
+  }
+
+  .study-session.study-session-typing .accent-key {
+    min-height: 2.4rem;
+  }
+
+  .study-session.study-session-typing .study-answer-actions .app-button-large {
+    min-height: 2.9rem;
+  }
+}
+
+/* The study card turns over to show the answer side. */
+.study-flip {
+  perspective: 1400px;
+}
+
+.study-flip-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  transform-style: preserve-3d;
+  transition: transform 700ms var(--ease-emphasized);
+}
+
+.study-flip-revealed .study-flip-inner {
+  transform: rotateY(180deg);
+}
+
+.study-flip-face {
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.study-flip-back {
+  align-content: start;
+  transform: rotateY(180deg);
+  animation: none;
+  border-color: color-mix(in srgb, var(--result-tone) 30%, var(--surface-card-border));
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--result-tone) 14%, transparent), transparent 18rem),
+    var(--surface-card);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .study-flip-inner {
+    transition: none;
+  }
+}
+
+/* Menu items that are unavailable say why underneath, since phones never show tooltips. */
+.deck-menu-popup {
+  max-width: min(18rem, calc(100vw - 2rem));
+}
+
+.menu-item-text {
+  display: grid;
+  gap: 0.1rem;
+  text-align: left;
+}
+
+.menu-item-hint {
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
+  color: var(--text-muted);
+}
+
+/* Scanned words: a compact, numbered list to check before importing. */
+.scan-review {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.scan-review-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scan-review-count {
+  display: inline-grid;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  place-items: center;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.scan-list {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--surface-card-border);
+  border-radius: 18px;
+  background: var(--surface-card);
+}
+
+.scan-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.6rem;
+  padding: 0.6rem 0.4rem 0.6rem 0.75rem;
+}
+
+.scan-row + .scan-row {
+  border-top: 1px solid var(--surface-card-border);
+}
+
+.scan-row-number {
+  display: grid;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin-top: 0.45rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--bg-base);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.scan-row-fields {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.scan-row-translation {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-muted);
+}
+
+.scan-row-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.4rem;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-body);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color var(--motion-fast) var(--ease-standard), background-color var(--motion-fast) var(--ease-standard);
+}
+
+.scan-row-input:hover:not(:disabled) {
+  background: var(--bg-base);
+}
+
+.scan-row-input:focus {
+  border-color: var(--accent);
+  background: var(--surface-card);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.scan-row-target {
+  color: var(--text-heading);
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+.scan-row-input::placeholder {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.scan-row-input-missing {
+  border-color: var(--warning-border);
+  border-style: dashed;
+  background: var(--warning-surface);
+}
+
+.scan-row-note {
+  padding-left: 0.55rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.scan-row-skipped .scan-row-target,
+.scan-row-skipped .scan-row-translation {
+  opacity: 0.55;
+}
+
+.scan-row-skipped .scan-row-target {
+  text-decoration: line-through;
+}
+
+.scan-row-remove {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.scan-row-remove:hover:not(:disabled) {
+  background: var(--danger-surface);
+  color: var(--danger-text);
+}
+
+.scan-row-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.scan-import-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.scan-import-count {
+  display: inline-grid;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  place-items: center;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 0.8125rem;
+}
+
+/* On phones the action bar of a sheet stays in reach above the keyboard and the list. */
+@media (max-width: 639px) {
+  .capture-footer,
+  .scan-import-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    margin: 0 -1rem -1rem;
+    padding: 0.65rem 1rem calc(0.65rem + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--surface-card-border);
+    background: var(--bg-surface);
+  }
+
+  /* While typing, the sheet gives the fields the room the title and tabs were using. */
+  html[data-keyboard="open"] .app-task-dialog {
+    max-height: var(--visual-height, 100dvh);
+    border-radius: 20px 20px 0 0;
+  }
+
+  html[data-keyboard="open"] .app-task-dialog-header {
+    gap: 0.4rem;
+    padding: 0.4rem 1rem 0.2rem;
+  }
+
+  html[data-keyboard="open"] .app-task-dialog-grabber,
+  html[data-keyboard="open"] .capture-hint,
+  html[data-keyboard="open"] .capture-lookups {
+    display: none;
+  }
+
+  html[data-keyboard="open"] .app-task-dialog-title-row h2 {
+    font-size: 1.05rem;
+  }
+
+  html[data-keyboard="open"] .app-task-dialog-close {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  html[data-keyboard="open"] .capture-tabs button {
+    min-height: 2.1rem;
+  }
+
+  html[data-keyboard="open"] .app-task-dialog > .p-4 {
+    padding-block: 0.6rem 1rem;
+  }
+
+  html[data-keyboard="open"] .capture-form,
+  html[data-keyboard="open"] .capture-fields {
+    gap: 0.75rem;
+  }
+
+  html[data-keyboard="open"] .app-input.capture-input {
+    min-height: 3rem;
+  }
 }

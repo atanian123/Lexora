@@ -1,4 +1,4 @@
-import { createWorker, OEM, PSM, type Worker } from "tesseract.js";
+import { createWorker, OEM, PSM, type Worker, type WorkerParams } from "tesseract.js";
 import workerPath from "tesseract.js/dist/worker.min.js?url";
 
 import type { LanguageCode } from "../types";
@@ -28,7 +28,8 @@ export async function recognizeVocabulary(
   file: File,
   languages: LanguageCode[],
   signal: AbortSignal,
-  onProgress: (progress: number) => void
+  onProgress: (progress: number) => void,
+  translationFirst = false
 ): Promise<RecognizedVocabulary> {
   const bitmap = await createImageBitmap(file);
   const canvas = document.createElement("canvas");
@@ -55,31 +56,70 @@ export async function recognizeVocabulary(
   signal.addEventListener("abort", abort, { once: true });
 
   async function recognize() {
-    const engine = await createWorker([...new Set(languages.map((language) => ocrLanguages[language]))], OEM.LSTM_ONLY, {
-      workerPath,
-      workerBlobURL: false,
-      logger: ({ status, progress }) => {
-        if (!finished && status === "recognizing text") onProgress(Math.round(progress * 100));
-      },
-      errorHandler: (error) => fail(error)
-    });
-    if (finished) {
-      await engine.terminate();
-      return "";
+    const models = languages.map((language) => ocrLanguages[language]);
+    const combinedModel = [...new Set(models)].join("+");
+    const cardModels = translationFirst ? [...models].reverse() : models;
+    let activeModel: string | undefined;
+    let pass = 0;
+    let totalPasses = 1;
+    let reportedProgress = 0;
+    const parameters: Partial<WorkerParams> = { tessedit_pageseg_mode: PSM.SINGLE_BLOCK, preserve_interword_spaces: "1" };
+
+    async function recognizeWithModel(image: HTMLCanvasElement, model: string, blocks = false) {
+      signal.throwIfAborted();
+      if (!worker) {
+        const engine = await createWorker(model, OEM.LSTM_ONLY, {
+          workerPath,
+          workerBlobURL: false,
+          logger: ({ status, progress }) => {
+            if (finished || status !== "recognizing text") return;
+            const percent = Math.min(99, Math.round((pass + progress) * 100 / totalPasses));
+            if (percent > reportedProgress) {
+              reportedProgress = percent;
+              onProgress(percent);
+            }
+          },
+          errorHandler: (error) => fail(error)
+        });
+        if (finished) {
+          await engine.terminate();
+          throw signal.reason ?? new Error("Text recognition stopped.");
+        }
+        worker = engine;
+      } else if (model !== activeModel) {
+        await worker.reinitialize(model);
+      }
+      activeModel = model;
+      signal.throwIfAborted();
+
+      // Each model may need to download first. Time the OCR pass after it is ready.
+      timeout = window.setTimeout(() => fail(new Error("Text recognition timed out.")), 120_000);
+      try {
+        await worker.setParameters(parameters);
+        const { data } = await worker.recognize(image, {}, { text: true, blocks });
+        return data;
+      } finally {
+        window.clearTimeout(timeout);
+      }
     }
-    worker = engine;
-    // The worker may need to download and cache language models before OCR can start.
-    timeout = window.setTimeout(() => fail(new Error("Text recognition timed out.")), 120_000);
-    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, preserve_interword_spaces: "1" });
-    const cards = await recognizeVocabularyCards(canvas, worker, languages.length > 1);
+
+    const cards = await recognizeVocabularyCards(canvas, cardModels.length > 1, async (sheet, lineIndex) => {
+      // Read each row with its own language model to keep similar accents distinct.
+      pass = lineIndex;
+      totalPasses = cardModels.length > 1 ? 2 : 1;
+      return recognizeWithModel(sheet, cardModels[lineIndex], true);
+    });
     if (cards) return cards;
-    signal.throwIfAborted();
-    const { data } = await worker.recognize(canvas);
+    pass = 0;
+    totalPasses = 1;
+    const data = await recognizeWithModel(canvas, combinedModel);
     return data.text;
   }
 
   try {
-    return await Promise.race([recognize(), interrupted]);
+    const result = await Promise.race([recognize(), interrupted]);
+    onProgress(100);
+    return result;
   } finally {
     finished = true;
     window.clearTimeout(timeout);
@@ -95,9 +135,13 @@ export function parseScannedVocabulary(text: RecognizedVocabulary, mode: ScanMod
       if (mode === "targetOnly") return { targetText: first, translations: "" };
       const [targetText, translations] = translationFirst ? [second, first] : [first, second];
       const choices = translations.split(/,\s+/);
-      // Keep phrase punctuation while treating a list of individual words as separate answers.
-      const singleWords = choices.every((choice) => /^[\p{L}\p{M}]+(?:[-'’][\p{L}\p{M}]+)*$/u.test(choice));
-      return { targetText, translations: singleWords ? choices.join("; ") : translations };
+      const isWord = (choice: string) => /^[\p{L}\p{M}]+(?:[-'’][\p{L}\p{M}]+)*$/u.test(choice);
+      const finalChoice = choices[choices.length - 1].split(" ");
+      // In a compact card list, repeated single-word choices can also precede a short phrase.
+      // Leave less clearly delimited phrases with their original commas for review.
+      const compactList = choices.every(isWord) || (choices.length >= 3 && choices.slice(0, -1).every(isWord) &&
+        finalChoice.length <= 3 && finalChoice.every(isWord));
+      return { targetText, translations: compactList ? choices.join("; ") : translations };
     });
   }
 
