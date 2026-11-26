@@ -10,6 +10,7 @@ import {
   Menu,
   Plus,
   RotateCcw,
+  ScanLine,
   Search,
   Settings,
   Moon,
@@ -19,7 +20,7 @@ import {
   Volume2,
   X
 } from "lucide-react";
-import { FormEvent, ChangeEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type SubmitEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type CardDirection,
@@ -55,6 +56,7 @@ import {
   deleteLearningSetup,
   ensureCardsForWords,
   ensureDefaultDeck,
+  findDefaultDeck,
   resetAllLocalData
 } from "./lib/db";
 import {
@@ -70,11 +72,15 @@ import { evaluateAnswer, type MatchResult } from "./lib/matching";
 import { scheduleReview } from "./lib/srs";
 import { fetchTranslationSuggestions, getTodayTranslationUsage } from "./lib/translation";
 import { ConfirmationProvider, useConfirm } from "./components/confirmation";
+import { AppSelect } from "./components/AppSelect";
 import { FlagIcon, HeaderSelect, Label, Metric, NavButton, ViewTitle } from "./components/ui";
+import { VocabularyScanner } from "./components/VocabularyScanner";
+import { normalizeDuplicateText, splitTranslations } from "./lib/vocabulary";
 import { cloudBackupAuthorizationStorageKey, type CloudBackupFile, createGoogleDriveBackupProvider } from "./lib/cloudBackup";
 
 type ViewKey = "study" | "library" | "decks" | "settings";
 type ThemeMode = "light" | "dark";
+type DeckSort = "newest" | "nameDescending" | "nameAscending";
 
 interface WordFormState {
   id?: string;
@@ -112,6 +118,7 @@ const emptyWordForm: WordFormState = {
 };
 
 const themeStorageKey = "lexora.theme";
+const deckSortStorageKey = "lexora.deckSort";
 const cloudFolderStorageKey = "lexora.cloud.folderPath";
 const cloudAutoBackupStorageKey = "lexora.cloud.autoBackup";
 const defaultCloudBackupFolder = "Lexora/Backups";
@@ -131,7 +138,11 @@ export default function App() {
     localStorage.getItem(activeProfileStorageKey)
   );
   const [learningSetups, setLearningSetups] = useState<LearningSetup[]>([]);
-  const [decks, setDecks] = useState<Deck[]>([]);
+  const [loadedDecks, setDecks] = useState<Deck[]>([]);
+  const [deckSort, setDeckSort] = useState<DeckSort>(() => {
+    const stored = localStorage.getItem(deckSortStorageKey);
+    return stored === "nameDescending" || stored === "nameAscending" ? stored : "newest";
+  });
   const [words, setWords] = useState<WordEntry[]>([]);
   const [subsets, setSubsets] = useState<CustomSubset[]>([]);
   const [cards, setCards] = useState<CardState[]>([]);
@@ -151,16 +162,26 @@ export default function App() {
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? null;
   const activeSetup =
     learningSetups.find((setup) => setup.id === activeProfile?.activeLearningSetupId) ?? learningSetups[0] ?? null;
+  const locale = activeProfile?.uiLanguage;
+  const decks = useMemo(() => {
+    const collator = new Intl.Collator(locale, { numeric: true, sensitivity: "base" });
+    return [...loadedDecks].sort((left, right) => {
+      const byName = collator.compare(left.name, right.name);
+      if (deckSort === "nameAscending") return byName;
+      if (deckSort === "nameDescending") return -byName;
+      return right.createdAt.localeCompare(left.createdAt) || -byName;
+    });
+  }, [deckSort, loadedDecks, locale]);
   const autoBackupSignature = useMemo(
     () => [
       collectionSignature(profiles),
       collectionSignature(learningSetups),
-      collectionSignature(decks),
+      collectionSignature(loadedDecks),
       collectionSignature(words),
       collectionSignature(subsets),
       collectionSignature(cards)
     ].join("|"),
-    [cards, decks, learningSetups, profiles, subsets, words]
+    [cards, loadedDecks, learningSetups, profiles, subsets, words]
   );
 
   useEffect(() => {
@@ -302,7 +323,7 @@ export default function App() {
 
     const [loadedSetups, loadedDecks, loadedWords, loadedSubsets, loadedCards, loadedUsage] = await Promise.all([
       selectedId ? db.learningSetups.where("profileId").equals(selectedId).sortBy("name") : Promise.resolve([]),
-      selectedSetupId ? db.decks.where("learningSetupId").equals(selectedSetupId).sortBy("name") : Promise.resolve([]),
+      selectedSetupId ? db.decks.where("learningSetupId").equals(selectedSetupId).toArray() : Promise.resolve([]),
       selectedSetupId ? db.words.where("learningSetupId").equals(selectedSetupId).toArray() : Promise.resolve([]),
       selectedSetupId ? db.subsets.where("learningSetupId").equals(selectedSetupId).sortBy("name") : Promise.resolve([]),
       selectedSetupId ? db.cards.where("learningSetupId").equals(selectedSetupId).toArray() : Promise.resolve([]),
@@ -439,7 +460,7 @@ export default function App() {
                   value={activeProfile.id}
                   ariaLabel={t("profile.switch")}
                   tooltip={t("profile.switch")}
-                  options={profiles.map((profile) => ({ value: profile.id, label: profile.name, textValue: profile.name }))}
+                  options={profiles.map((profile) => ({ value: profile.id, label: profile.name }))}
                   onChange={(profileId) => {
                     setActiveProfileId(profileId);
                     void refreshAll(profileId);
@@ -513,7 +534,7 @@ export default function App() {
                     value={activeProfile.id}
                     ariaLabel={t("profile.switch")}
                     tooltip={t("profile.switch")}
-                    options={profiles.map((profile) => ({ value: profile.id, label: profile.name, textValue: profile.name }))}
+                    options={profiles.map((profile) => ({ value: profile.id, label: profile.name }))}
                     onChange={(profileId) => {
                       setActiveProfileId(profileId);
                       void refreshAll(profileId);
@@ -618,6 +639,11 @@ export default function App() {
               setup={activeSetup}
               decks={decks}
               words={words}
+              deckSort={deckSort}
+              onSortChange={(sort) => {
+                setDeckSort(sort);
+                localStorage.setItem(deckSortStorageKey, sort);
+              }}
               onRefresh={refreshAll}
               onStatus={setStatus}
             />
@@ -653,7 +679,7 @@ function FirstRun({ onCreated }: { onCreated: (profile: Profile) => void | Promi
     void i18n.changeLanguage(uiLanguage);
   }, [uiLanguage, i18n]);
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!name.trim()) {
       return;
@@ -714,7 +740,7 @@ function SetupRequired({ profile, onCreated }: { profile: Profile; onCreated: ()
   const [baseLanguage, setBaseLanguage] = useState<LanguageCode>("de");
   const [targetLanguage, setTargetLanguage] = useState<LanguageCode>("es");
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     await createLearningSetup(
       profile.id,
@@ -1264,6 +1290,7 @@ function LibraryView({
   const confirm = useConfirm();
   const [form, setForm] = useState<WordFormState>(() => ({ ...emptyWordForm, deckId: preferredLibraryDeckId(decks, setup.baseLanguage) }));
   const [addWordPanelOpen, setAddWordPanelOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [editingWord, setEditingWord] = useState<WordEntry | null>(null);
   const [editForm, setEditForm] = useState<WordFormState>({ ...emptyWordForm });
   const [editDeckIds, setEditDeckIds] = useState<string[]>([]);
@@ -1412,7 +1439,7 @@ function LibraryView({
     }
   }
 
-  async function saveWord(event: FormEvent) {
+  async function saveWord(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setWordFormSubmitted(true);
     const translations = splitTranslations(form.translations);
@@ -1511,7 +1538,7 @@ function LibraryView({
     }
   }
 
-  async function updateWord(event: FormEvent) {
+  async function updateWord(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingWord) {
       return;
@@ -1552,7 +1579,25 @@ function LibraryView({
 
   return (
     <section className="grid gap-4">
-      <ViewTitle title={t("library.title")} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <ViewTitle title={t("library.title")} />
+        <button className="app-button app-button-secondary" type="button" aria-expanded={scannerOpen} onClick={() => setScannerOpen((open) => !open)}>
+          <ScanLine size={18} />
+          {t("scan.title")}
+        </button>
+      </div>
+      {scannerOpen ? (
+        <VocabularyScanner
+          setup={setup}
+          decks={decks}
+          defaultDeckId={preferredLibraryDeckId(decks, setup.baseLanguage)}
+          onRefresh={onRefresh}
+          onImported={(count, duplicates) => {
+            onStatus(t(duplicates ? "scan.importedWithDuplicates" : "status.imported", { count, duplicates }));
+            setScannerOpen(false);
+          }}
+        />
+      ) : null}
       <form className="app-panel grid gap-3 p-4" onSubmit={saveWord} noValidate>
         <button
           className="flex w-full items-center justify-between gap-3 rounded-xl px-1 py-1.5 text-left transition hover:bg-[var(--dropdown-hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
@@ -1661,7 +1706,7 @@ function LibraryView({
             label={t("common.deck")}
             value={form.deckId}
             compact
-            options={decks.map((deck) => ({ value: deck.id, label: deck.name, textValue: deck.name }))}
+            options={decks.map((deck) => ({ value: deck.id, label: deck.name }))}
             onChange={(deckId) => setForm({ ...form, deckId })}
           />
           <Label text={`${t("common.notes")} (${t("common.optional")})`}>
@@ -1760,7 +1805,7 @@ function LibraryView({
               options={(decks.filter((deck) => editDeckIds.includes(deck.id)).length > 0
                 ? decks.filter((deck) => editDeckIds.includes(deck.id))
                 : decks
-              ).map((deck) => ({ value: deck.id, label: deck.name, textValue: deck.name }))}
+              ).map((deck) => ({ value: deck.id, label: deck.name }))}
               onChange={(deckId) => setEditForm({ ...editForm, deckId })}
             />
               <Label text={`${t("common.notes")} (${t("common.optional")})`}>
@@ -1836,8 +1881,8 @@ function LibraryView({
             label={t("common.deck")}
             value={deckFilter}
             options={[
-              { value: "all", label: t("common.all"), textValue: t("common.all") },
-              ...decks.map((deck) => ({ value: deck.id, label: deck.name, textValue: deck.name }))
+              { value: "all", label: t("common.all") },
+              ...decks.map((deck) => ({ value: deck.id, label: deck.name }))
             ]}
             onChange={setDeckFilter}
           />
@@ -1845,10 +1890,10 @@ function LibraryView({
             label={t("library.reviewStatus")}
             value={statusFilter}
             options={[
-              { value: "all", label: t("common.all"), textValue: t("common.all") },
-              { value: "due", label: t("common.due"), textValue: t("common.due") },
-              { value: "new", label: t("common.new"), textValue: t("common.new") },
-              { value: "learned", label: t("common.learned"), textValue: t("common.learned") }
+              { value: "all", label: t("common.all") },
+              { value: "due", label: t("common.due") },
+              { value: "new", label: t("common.new") },
+              { value: "learned", label: t("common.learned") }
             ]}
             onChange={(value) => setStatusFilter(value as ReviewStatus)}
           />
@@ -1879,8 +1924,7 @@ function LibraryView({
                 tooltip={t("library.pageSizeHint")}
                 options={libraryPageSizeOptions.map((pageSize) => ({
                   value: String(pageSize),
-                  label: String(pageSize),
-                  textValue: String(pageSize)
+                  label: String(pageSize)
                 }))}
                 onChange={(value) => setWordsPerPage(Number(value))}
               />
@@ -1937,6 +1981,8 @@ function DecksView({
   setup,
   decks,
   words,
+  deckSort,
+  onSortChange,
   onRefresh,
   onStatus
 }: {
@@ -1944,6 +1990,8 @@ function DecksView({
   setup: LearningSetup;
   decks: Deck[];
   words: WordEntry[];
+  deckSort: DeckSort;
+  onSortChange: (sort: DeckSort) => void;
   onRefresh: (nextActiveId?: string, showLoading?: boolean) => Promise<void>;
   onStatus: (message: string) => void;
 }) {
@@ -1967,7 +2015,7 @@ function DecksView({
     });
   }, [deckWordSearch, words]);
 
-  async function addDeck(event: FormEvent) {
+  async function addDeck(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!deckName.trim()) {
       return;
@@ -2015,7 +2063,7 @@ function DecksView({
     setRenameDeckName("");
   }
 
-  async function submitDeckRename(event: FormEvent) {
+  async function submitDeckRename(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!renamingDeck || !renameDeckName.trim()) {
       return;
@@ -2028,10 +2076,29 @@ function DecksView({
   }
 
   async function deleteDeck(deck: Deck) {
+    const otherDecks = decks.filter((candidate) => candidate.id !== deck.id);
+    const defaultDeck = findDefaultDeck(otherDecks, setup.baseLanguage);
+    let destination = defaultDeck?.id ?? "";
+    const destinations = otherDecks.map((candidate) => ({ value: candidate.id, label: candidate.name }));
+    if (!defaultDeck) {
+      destinations.unshift({ value: "", label: t("decks.newDefaultDeck", { name: defaultDeckNames[setup.baseLanguage] }) });
+    }
+    destinations.push({ value: "delete", label: t("decks.deleteExclusiveWords") });
     const confirmed = await confirm({
-      title: t("common.confirmDeleteTitle"),
-      message: `${t("common.confirmDelete")}\n\n${deck.name}`,
-      confirmLabel: t("common.delete"),
+      title: t("decks.deleteDeck"),
+      message: (
+        <div className="grid gap-2">
+          <p className="app-heading break-words font-semibold">{deck.name}</p>
+          <AppSelect
+            label={t("decks.transferDestination")}
+            defaultValue={destination}
+            options={destinations}
+            onChange={(value) => { destination = value; }}
+            wrap
+          />
+        </div>
+      ),
+      confirmLabel: t("decks.deleteDeck"),
       cancelLabel: t("common.cancel"),
       variant: "danger"
     });
@@ -2039,23 +2106,14 @@ function DecksView({
       return;
     }
 
-    const deckWords = words.filter((word) => wordDeckIds(word).includes(deck.id));
-    const otherDeck = decks.find((candidate) => candidate.id !== deck.id);
-
-    if (deckWords.length > 0 && otherDeck) {
-      const reassign = await confirm({
-        title: t("decks.reassignWords"),
-        message: otherDeck.name,
-        confirmLabel: t("decks.reassignWords"),
-        cancelLabel: t("decks.deleteWords")
-      });
-      await deleteDeckWithWords(deck.id, reassign ? "reassign" : "delete", reassign ? otherDeck.id : undefined);
-    } else {
-      await deleteDeckWithWords(deck.id, "delete");
+    try {
+      await deleteDeckWithWords(deck.id, destination === "delete" ? "delete" : "reassign", destination || undefined);
+      await onRefresh();
+      onStatus(t("status.deleted"));
+    } catch {
+      await onRefresh();
+      onStatus(t("decks.deleteFailed"));
     }
-
-    onStatus(t("status.deleted"));
-    await onRefresh();
   }
 
   function resetDeckCreation() {
@@ -2066,7 +2124,19 @@ function DecksView({
 
   return (
     <section className="grid gap-4">
-      <ViewTitle title={t("decks.title")} />
+      <div className="flex items-start justify-between gap-3">
+        <ViewTitle title={t("decks.title")} />
+        <div className="w-40 max-w-[55%]">
+          <AppSelect
+            value={deckSort}
+            ariaLabel={t("decks.sort")}
+            compact
+            wrap
+            options={(["newest", "nameDescending", "nameAscending"] as const).map((value) => ({ value, label: t(`decks.${value}`) }))}
+            onChange={(value) => onSortChange(value as DeckSort)}
+          />
+        </div>
+      </div>
       {renamingDeck ? (
         <RenameModal
           title={t("common.rename")}
@@ -2281,7 +2351,7 @@ function SettingsView({
     localStorage.setItem(cloudAutoBackupStorageKey, cloudAutoBackup ? "true" : "false");
   }, [cloudAutoBackup]);
 
-  async function createAdditionalProfile(event: FormEvent) {
+  async function createAdditionalProfile(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!newProfileName.trim()) {
       return;
@@ -2293,7 +2363,7 @@ function SettingsView({
     await onRefresh(created.id);
   }
 
-  async function createSetup(event: FormEvent) {
+  async function createSetup(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     await createLearningSetup(
       profile.id,
@@ -2316,7 +2386,7 @@ function SettingsView({
     setRenameSetupName("");
   }
 
-  async function submitSetupRename(event: FormEvent) {
+  async function submitSetupRename(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!renamingSetup || !renameSetupName.trim()) {
       return;
@@ -3023,7 +3093,7 @@ function RenameModal({
   description?: string;
   onChange: (value: string) => void;
   onCancel: () => void;
-  onSubmit: (event: FormEvent) => void | Promise<void>;
+  onSubmit: (event: SubmitEvent<HTMLFormElement>) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
   const titleId = useId();
@@ -3064,8 +3134,7 @@ function RenameModal({
 }
 
 function preferredLibraryDeckId(decks: Deck[], baseLanguage: LanguageCode): string {
-  const defaultName = defaultDeckNames[baseLanguage];
-  return decks.find((deck) => deck.name === defaultName)?.id ?? decks[0]?.id ?? "";
+  return findDefaultDeck(decks, baseLanguage)?.id ?? decks[0]?.id ?? "";
 }
 
 function isCoarsePointer(): boolean {
@@ -3128,124 +3197,6 @@ function ConnectionBadge({ online, compact = false }: { online: boolean; compact
   );
 }
 
-interface SelectOption {
-  value: string;
-  label: ReactNode;
-  textValue: string;
-}
-
-function AppSelect({
-  label,
-  value,
-  options,
-  onChange,
-  compact = false,
-  ariaLabel,
-  tooltip
-}: {
-  label?: ReactNode;
-  value: string;
-  options: SelectOption[];
-  onChange: (value: string) => void;
-  compact?: boolean;
-  ariaLabel?: string;
-  tooltip?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = options.find((option) => option.value === value) ?? options[0];
-  const selectedIndex = Math.max(0, options.findIndex((option) => option.value === selected?.value));
-
-  function selectByIndex(index: number) {
-    const next = options[index];
-    if (next) {
-      onChange(next.value);
-    }
-  }
-
-  function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
-    if (event.key === "Escape") {
-      setOpen(false);
-      return;
-    }
-
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      setOpen((current) => !current);
-      return;
-    }
-
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-      return;
-    }
-
-    event.preventDefault();
-    const lastIndex = options.length - 1;
-    const nextIndex =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? lastIndex
-          : event.key === "ArrowDown"
-            ? Math.min(lastIndex, selectedIndex + 1)
-            : Math.max(0, selectedIndex - 1);
-    selectByIndex(nextIndex);
-    setOpen(true);
-  }
-
-  const control = (
-    <div className="relative min-w-0 max-w-full" onBlur={() => window.setTimeout(() => setOpen(false), 100)}>
-      <button
-        className={`app-input flex min-w-0 items-center justify-between gap-2 text-left ${compact ? "app-input-compact min-h-9" : "min-h-10"}`}
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={ariaLabel}
-        data-tooltip={open ? "" : tooltip}
-        onClick={() => setOpen((current) => !current)}
-        onKeyDown={handleKeyDown}
-      >
-        <span className="min-w-0 truncate">{selected?.label}</span>
-        <ChevronRight className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} size={compact ? 15 : 16} />
-      </button>
-      <div
-        className={`app-panel dropdown-panel absolute z-40 mt-1 max-h-72 w-full p-1 ${open ? "dropdown-panel-open" : ""}`}
-        role="listbox"
-        aria-hidden={!open}
-      >
-        {options.map((option) => (
-          <button
-            key={option.value}
-            className={`dropdown-option flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-sm ${
-              option.value === selected?.value ? "dropdown-option-active" : ""
-            }`}
-            type="button"
-            role="option"
-            aria-selected={option.value === selected?.value}
-            tabIndex={open ? 0 : -1}
-            onClick={() => {
-              onChange(option.value);
-              setOpen(false);
-            }}
-          >
-            <span className="min-w-0 truncate">{option.label}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
-  if (!label) {
-    return control;
-  }
-
-  return (
-    <div className="app-label grid min-w-0 gap-1 text-sm font-semibold">
-      <span>{label}</span>
-      {control}
-    </div>
-  );
-}
-
 function ScopeSelect({
   scope,
   setScope,
@@ -3263,11 +3214,10 @@ function ScopeSelect({
       label={t("study.scope")}
       value={value}
       options={[
-        { value: "all", label: t("common.all"), textValue: t("common.all") },
+        { value: "all", label: t("common.all") },
         ...decks.map((deck) => ({
           value: `deck:${deck.id}`,
-          label: `${t("common.deck")}: ${deck.name}`,
-          textValue: `${t("common.deck")}: ${deck.name}`
+          label: `${t("common.deck")}: ${deck.name}`
         }))
       ]}
       onChange={(next) => {
@@ -3818,7 +3768,7 @@ function setupNamePlaceholder(
   baseLanguage: LanguageCode,
   targetLanguage: LanguageCode,
   locale: string,
-  t: (key: string, values?: Record<string, string>) => string
+  t: (key: string, values: { base: string; target: string }) => string
 ): string {
   return t("setup.namePlaceholder", {
     target: localizedLanguageName(targetLanguage, locale),
@@ -3887,17 +3837,6 @@ function getAcceptedAnswers(studyCard: StudyCard): string[] {
 
 function directionLabel(direction: CardDirection, t: (key: string) => string): string {
   return direction === "target-base" ? t("study.targetBase") : t("study.baseTarget");
-}
-
-function splitTranslations(value: string): string[] {
-  return value
-    .split(";")
-    .map((translation) => translation.trim())
-    .filter(Boolean);
-}
-
-function normalizeDuplicateText(value: string): string {
-  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
 async function createCurrentBackupExport(): Promise<string> {

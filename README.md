@@ -73,6 +73,7 @@ The Library is the main vocabulary workspace.
 Supported actions:
 
 - Add a word or phrase in the active target language.
+- Scan a photo of target-language words for translation suggestions, or scan a photo of vocabulary that already includes translations. Review and edit the entries before importing them into a deck.
 - Fetch translation suggestions from MyMemory.
 - Add one or more accepted translations.
 - Add optional notes or context.
@@ -83,6 +84,10 @@ Supported actions:
 - Monitor daily translation usage.
 
 Manual translation entry remains available when offline or when the translation quota is reached. The last selected deck is preserved while adding multiple words, so repeated entry into the same deck is fast.
+
+Photo recognition runs in the browser and downloads its language models when needed. Use one word or phrase per line, or one bilingual pair per row with a separator or a clear gap between columns. Automatic scans use one MyMemory lookup per distinct term, adding example context where it fits and preferring exact machine translations when available.
+
+The Decks screen starts with the newest decks first. It remembers your sort preference and preselects the learning setup’s default deck when you delete a deck and transfer its words.
 
 ## Study
 

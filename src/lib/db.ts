@@ -224,24 +224,30 @@ export async function ensureDefaultDeck(
   learningSetupId: string,
   baseLanguage: LanguageCode = defaultBaseLanguage
 ): Promise<Deck> {
-  const existingDecks = await db.decks.where("learningSetupId").equals(learningSetupId).toArray();
-  const defaultName = defaultDeckNames[baseLanguage];
-  const existingDefault = existingDecks.find((deck) => deck.name === defaultName);
-  if (existingDefault) {
-    return existingDefault;
-  }
+  return db.transaction("rw", db.decks, async () => {
+    const existingDecks = await db.decks.where("learningSetupId").equals(learningSetupId).toArray();
+    const existingDefault = findDefaultDeck(existingDecks, baseLanguage);
+    if (existingDefault) {
+      return existingDefault;
+    }
 
-  const timestamp = nowIso();
-  const deck: Deck = {
-    id: createId("deck"),
-    profileId,
-    learningSetupId,
-    name: defaultDeckNames[baseLanguage],
-    createdAt: timestamp,
-    updatedAt: timestamp
-  };
-  await db.decks.add(deck);
-  return deck;
+    const timestamp = nowIso();
+    const deck: Deck = {
+      id: createId("deck"),
+      profileId,
+      learningSetupId,
+      name: defaultDeckNames[baseLanguage],
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    await db.decks.add(deck);
+    return deck;
+  });
+}
+
+export function findDefaultDeck(decks: Deck[], baseLanguage: LanguageCode): Deck | undefined {
+  return decks.filter((deck) => deck.name === defaultDeckNames[baseLanguage])
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))[0];
 }
 
 export async function ensureCardsForWord(word: WordEntry): Promise<void> {
@@ -284,10 +290,25 @@ export function createInitialCardState(
 }
 
 export async function deleteDeckWithWords(deckId: string, mode: "delete" | "reassign", targetDeckId?: string): Promise<void> {
-  await db.transaction("rw", db.decks, db.words, db.cards, async () => {
-    const allWords = await db.words.toArray();
+  await db.transaction("rw", db.decks, db.words, db.cards, db.learningSetups, async () => {
+    const source = await db.decks.get(deckId);
+    if (!source) {
+      return;
+    }
+    const setup = await db.learningSetups.get(source.learningSetupId);
+    if (!setup) {
+      throw new Error("Learning setup is no longer available.");
+    }
+    const destination = mode === "reassign" && targetDeckId ? await db.decks.get(targetDeckId) : undefined;
+    if (mode === "reassign" && targetDeckId && (!destination || destination.id === deckId || destination.learningSetupId !== setup.id)) {
+      throw new Error("Destination deck is no longer available.");
+    }
+
+    const allWords = await db.words.where("learningSetupId").equals(setup.id).toArray();
     const words = allWords.filter((word) => wordDeckIds(word).includes(deckId));
     const timestamp = nowIso();
+    await db.decks.delete(deckId);
+    const defaultDeck = await ensureDefaultDeck(source.profileId, setup.id, setup.baseLanguage);
 
     if (mode === "delete") {
       const wordsToDelete: WordEntry[] = [];
@@ -318,20 +339,19 @@ export async function deleteDeckWithWords(deckId: string, mode: "delete" | "reas
           });
         })
       );
-    } else if (targetDeckId) {
+    } else {
+      const destinationId = destination?.id ?? defaultDeck.id;
       await Promise.all(
         words.map((word) => {
-          const nextDeckIds = Array.from(new Set([...wordDeckIds(word).filter((candidate) => candidate !== deckId), targetDeckId]));
+          const nextDeckIds = Array.from(new Set([...wordDeckIds(word).filter((candidate) => candidate !== deckId), destinationId]));
           return db.words.update(word.id, {
-            deckId: word.deckId === deckId ? targetDeckId : word.deckId,
+            deckId: word.deckId === deckId ? destinationId : word.deckId,
             deckIds: nextDeckIds,
             updatedAt: timestamp
           });
         })
       );
     }
-
-    await db.decks.delete(deckId);
   });
 }
 

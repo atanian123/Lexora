@@ -1033,6 +1033,10 @@ select.app-input {
     box-shadow var(--motion-medium) var(--ease-standard);
 }
 
+.dropdown-panel-above {
+  transform-origin: bottom;
+}
+
 .dropdown-panel::-webkit-scrollbar {
   width: 0.55rem;
 }
