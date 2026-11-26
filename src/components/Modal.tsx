@@ -35,12 +35,14 @@ export function useModalDialog(onDismiss: () => void, dismissDisabled = false) {
   return { ref, ...events };
 }
 
-export function Modal({ title, children, onClose, wide = false, closeDisabled = false }: {
+export function Modal({ title, children, onClose, wide = false, closeDisabled = false, toolbar }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
   closeDisabled?: boolean;
+  /** Rendered under the title, inside the sticky header (for example tabs). */
+  toolbar?: ReactNode;
 }) {
   const { t } = useTranslation();
   const dialog = useModalDialog(onClose, closeDisabled);
@@ -53,10 +55,14 @@ export function Modal({ title, children, onClose, wide = false, closeDisabled = 
       aria-labelledby={titleId}
     >
       <header className="app-task-dialog-header">
-        <h2 id={titleId} className="app-heading min-w-0 text-lg font-bold">{title}</h2>
-        <button className="app-button app-button-secondary app-icon-button" type="button" aria-label={t("common.close")} onClick={onClose} disabled={closeDisabled}>
-          <X size={18} />
-        </button>
+        <span className="app-task-dialog-grabber" aria-hidden="true" />
+        <div className="app-task-dialog-title-row">
+          <h2 id={titleId} className="app-display min-w-0 text-xl">{title}</h2>
+          <button className="app-task-dialog-close" type="button" aria-label={t("common.close")} onClick={onClose} disabled={closeDisabled}>
+            <X size={20} />
+          </button>
+        </div>
+        {toolbar}
       </header>
       <div className="p-4">{children}</div>
     </dialog>

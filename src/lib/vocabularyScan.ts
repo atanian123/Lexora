@@ -2,6 +2,7 @@ import { createWorker, OEM, PSM, type Worker } from "tesseract.js";
 import workerPath from "tesseract.js/dist/worker.min.js?url";
 
 import type { LanguageCode } from "../types";
+import { recognizeVocabularyCards, type RecognizedVocabularyCard } from "./vocabularyCards";
 
 const ocrLanguages: Record<LanguageCode, string> = {
   en: "eng",
@@ -21,12 +22,14 @@ export interface ScannedWord {
   translations: string;
 }
 
+type RecognizedVocabulary = string | RecognizedVocabularyCard[];
+
 export async function recognizeVocabulary(
   file: File,
   languages: LanguageCode[],
   signal: AbortSignal,
   onProgress: (progress: number) => void
-): Promise<string> {
+): Promise<RecognizedVocabulary> {
   const bitmap = await createImageBitmap(file);
   const canvas = document.createElement("canvas");
   try {
@@ -68,6 +71,9 @@ export async function recognizeVocabulary(
     // The worker may need to download and cache language models before OCR can start.
     timeout = window.setTimeout(() => fail(new Error("Text recognition timed out.")), 120_000);
     await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, preserve_interword_spaces: "1" });
+    const cards = await recognizeVocabularyCards(canvas, worker, languages.length > 1);
+    if (cards) return cards;
+    signal.throwIfAborted();
     const { data } = await worker.recognize(canvas);
     return data.text;
   }
@@ -83,7 +89,18 @@ export async function recognizeVocabulary(
   }
 }
 
-export function parseScannedVocabulary(text: string, mode: ScanMode, translationFirst: boolean): ScannedWord[] {
+export function parseScannedVocabulary(text: RecognizedVocabulary, mode: ScanMode, translationFirst: boolean): ScannedWord[] {
+  if (typeof text !== "string") {
+    return text.map(({ first, second }) => {
+      if (mode === "targetOnly") return { targetText: first, translations: "" };
+      const [targetText, translations] = translationFirst ? [second, first] : [first, second];
+      const choices = translations.split(/,\s+/);
+      // Keep phrase punctuation while treating a list of individual words as separate answers.
+      const singleWords = choices.every((choice) => /^[\p{L}\p{M}]+(?:[-'’][\p{L}\p{M}]+)*$/u.test(choice));
+      return { targetText, translations: singleWords ? choices.join("; ") : translations };
+    });
+  }
+
   return text.split(/\r?\n/).flatMap((rawLine) => {
     const line = rawLine.trim().replace(/^(?:[•●◦▪*-]|\d+[.)])\s+/, "");
     if (!/\p{L}/u.test(line)) return [];

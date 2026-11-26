@@ -10,19 +10,22 @@ import { normalizeDuplicateText, splitTranslations } from "../lib/vocabulary";
 import type { ScanMode, ScannedWord } from "../lib/vocabularyScan";
 import type { Deck, LearningSetup, WordEntry } from "../types";
 import { AppSelect } from "./AppSelect";
-import { Modal } from "./Modal";
 import { Label } from "./ui";
 
 interface ReviewRow extends ScannedWord {
   id: string;
 }
 
-export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onClose, onImported }: {
+/**
+ * The Scan photo panel of the Add words dialog. The dialog keeps it mounted while it is open,
+ * so the photo, reviewed rows, mode and deck survive switching to the Type tab and back.
+ */
+export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSavingChange, onImported }: {
   setup: LearningSetup;
   decks: Deck[];
   defaultDeckId: string;
   onRefresh: () => Promise<void>;
-  onClose: () => void;
+  onSavingChange?: (saving: boolean) => void;
   onImported: (count: number, duplicates: number) => void;
 }) {
   const { t } = useTranslation();
@@ -44,6 +47,10 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onCl
   const incomplete = rows?.some((row) => !row.targetText.trim() || splitTranslations(row.translations).length === 0);
 
   useEffect(() => () => scan.current?.abort(), []);
+
+  useEffect(() => {
+    onSavingChange?.(saving);
+  }, [saving]);
 
   useEffect(() => {
     if (!photo) return;
@@ -173,7 +180,7 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onCl
   }
 
   return (
-    <Modal title={t("scan.title")} onClose={onClose} closeDisabled={saving} wide>
+    <>
       <div className="grid gap-3">
         <div className="grid gap-2 sm:grid-cols-2">
           <AppSelect
@@ -263,6 +270,6 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onCl
           </form>
         ) : null}
       </div>
-    </Modal>
+    </>
   );
 }

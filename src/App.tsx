@@ -1,13 +1,15 @@
 import {
+  ArrowRight,
   BookOpen,
+  Camera,
   Check,
-  ChevronLeft,
   ChevronRight,
   Download,
   Edit2,
   Gauge,
+  House,
   Layers,
-  Menu,
+  MoreHorizontal,
   Plus,
   RotateCcw,
   ScanLine,
@@ -74,9 +76,22 @@ import { fetchTranslationSuggestions, getTodayTranslationUsage } from "./lib/tra
 import { ConfirmationProvider, useConfirm } from "./components/confirmation";
 import { AppSelect } from "./components/AppSelect";
 import { Modal } from "./components/Modal";
-import { FlagIcon, HeaderSelect, Label, Metric, NavButton, ViewTitle } from "./components/ui";
+import { FlagIcon, HeaderSelect, Label, NavButton, ViewTitle } from "./components/ui";
 import { VocabularyScanner } from "./components/VocabularyScanner";
 import { normalizeDuplicateText, splitTranslations } from "./lib/vocabulary";
+import {
+  accentKeys,
+  addDays,
+  countDueBetween,
+  dueForecast,
+  formatInterval,
+  greetings,
+  secondsPerCard,
+  startOfLocalDay,
+  wordStrength
+} from "./lib/progress";
+import { canSpeak, speak } from "./lib/speech";
+import { MobileTabBar } from "./components/MobileTabBar";
 import { cloudBackupAuthorizationStorageKey, type CloudBackupFile, createGoogleDriveBackupProvider } from "./lib/cloudBackup";
 
 type ViewKey = "study" | "library" | "decks" | "settings";
@@ -101,14 +116,15 @@ interface SessionState {
   current?: StudyCard;
   reviewed: number;
   correct: number;
-  streak: number;
-  bestStreak: number;
+  /** Ids of cards rated Again at least once in this session. */
+  again: string[];
+  /** Each reviewed card with its latest rating and the schedule saved for it. */
+  latest: Record<string, { item: StudyCard; rating: ReviewRating }>;
   answer: string;
   revealed: boolean;
   match?: MatchResult;
   closeAccepted: boolean;
   selectedRating?: ReviewRating;
-  paused: boolean;
 }
 
 const emptyWordForm: WordFormState = {
@@ -124,7 +140,7 @@ const cloudFolderStorageKey = "lexora.cloud.folderPath";
 const cloudAutoBackupStorageKey = "lexora.cloud.autoBackup";
 const defaultCloudBackupFolder = "Lexora/Backups";
 const latestCloudBackupFilename = "lexora-backup-latest.json";
-const libraryPageSizeOptions = [10, 25, 50, 100];
+const libraryPageSize = 40;
 
 function readStoredTheme(): ThemeMode {
   const stored = localStorage.getItem(themeStorageKey);
@@ -151,6 +167,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [captureRequest, setCaptureRequest] = useState<"word" | "scan" | null>(null);
+  const [studyRequest, setStudyRequest] = useState<ScopeSelection | null>(null);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [theme, setThemeState] = useState<ThemeMode>(readStoredTheme);
   const autoBackupInitializedRef = useRef(false);
@@ -386,7 +404,7 @@ export default function App() {
   return (
     <ConfirmationProvider>
     <div className="app-shell">
-      <header className="app-header app-glass sticky top-0 z-30 border-b">
+      <header className="app-header app-glass sticky top-0 z-30 hidden border-b sm:block">
         <div className="mx-auto grid max-w-7xl gap-2 px-3 py-2 sm:gap-3 sm:px-6 sm:py-3">
           <div className="desktop-top-row">
             <div className="flex min-w-0 items-center gap-3">
@@ -398,8 +416,8 @@ export default function App() {
             </div>
             <div className="desktop-nav-tabs" aria-label="Primary">
               <NavButton
-                icon={<BookOpen size={18} />}
-                label={t("nav.study")}
+                icon={<House size={18} />}
+                label={t("ui.today")}
                 active={view === "study"}
                 onClick={() => setView("study")}
               />
@@ -422,16 +440,6 @@ export default function App() {
                 onClick={() => setView("settings")}
               />
             </div>
-            <button
-              className="mobile-menu-trigger app-button app-button-secondary h-10 w-10 shrink-0 p-0"
-              type="button"
-              aria-expanded={mobileMenuOpen}
-              aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
-              data-tooltip={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
-              onClick={() => setMobileMenuOpen((open) => !open)}
-            >
-              {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
-            </button>
             <div className="desktop-preferences">
               <ChromePreferences
                 uiLanguage={activeProfile.uiLanguage}
@@ -476,25 +484,6 @@ export default function App() {
           </div>
         </div>
       </header>
-
-      <nav className="app-nav app-glass border-b sm:hidden" aria-label="Primary">
-        <div className="mx-auto max-w-7xl px-3 sm:px-6">
-          <div className="flex min-h-11 items-center justify-between gap-2 sm:hidden">
-            <div className="min-w-0 shrink">
-              <span className="app-heading block text-sm font-semibold">{currentNavLabel(view, t)}</span>
-            </div>
-            {activeSetup ? (
-              <span
-                className="mobile-active-language"
-                data-tooltip={`${learningSetupDisplayName(activeSetup, activeProfile.uiLanguage)} · ${t("setup.baseShort")}: ${languageOptionLabel(activeSetup.baseLanguage, activeProfile.uiLanguage)}`}
-              >
-                <FlagIcon code={activeSetup.targetLanguage} />
-                <span className="truncate">{learningSetupDisplayName(activeSetup, activeProfile.uiLanguage)}</span>
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </nav>
 
       {mobileMenuOpen ? (
         <div className="fixed inset-0 z-50 sm:hidden" role="presentation">
@@ -556,45 +545,6 @@ export default function App() {
                 />
               </section>
 
-              <section className="grid gap-2" aria-label={t("nav.menu")}>
-                <NavButton
-                  icon={<BookOpen size={18} />}
-                  label={t("nav.study")}
-                  active={view === "study"}
-                  onClick={() => {
-                    setView("study");
-                    setMobileMenuOpen(false);
-                  }}
-                />
-                <NavButton
-                  icon={<Search size={18} />}
-                  label={t("nav.library")}
-                  active={view === "library"}
-                  onClick={() => {
-                    setView("library");
-                    setMobileMenuOpen(false);
-                  }}
-                />
-                <NavButton
-                  icon={<Layers size={18} />}
-                  label={t("nav.decks")}
-                  active={view === "decks"}
-                  onClick={() => {
-                    setView("decks");
-                    setMobileMenuOpen(false);
-                  }}
-                />
-                <NavButton
-                  icon={<Settings size={18} />}
-                  label={t("nav.settings")}
-                  active={view === "settings"}
-                  onClick={() => {
-                    setView("settings");
-                    setMobileMenuOpen(false);
-                  }}
-                />
-              </section>
-
               <section className="grid gap-2">
                 <UsageBadge usage={usage} />
                 <ConnectionBadge online={isOnline} />
@@ -605,12 +555,12 @@ export default function App() {
       ) : null}
 
       {status ? (
-        <div className="app-status app-glass border-b px-4 py-2 text-center text-sm font-semibold">
+        <div className="app-status app-status-toast app-glass border-b px-4 py-2 text-center text-sm font-semibold" role="status">
           {status}
         </div>
       ) : null}
 
-      <main className="mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-6">
+      <main className="app-main mx-auto max-w-7xl px-4 pt-4 sm:px-6 sm:py-6">
         <div key={`${view}-${activeSetup?.id ?? "none"}`} className="app-view-transition">
           {view === "study" && activeSetup ? (
             <StudyView
@@ -619,6 +569,14 @@ export default function App() {
               decks={decks}
               words={words}
               cards={cards}
+              studyRequest={studyRequest}
+              onStudyRequestHandled={() => setStudyRequest(null)}
+              onOpenSwitcher={() => setMobileMenuOpen(true)}
+              onOpenDecks={() => setView("decks")}
+              onAddWords={() => {
+                setCaptureRequest("word");
+                setView("library");
+              }}
               onRefresh={refreshAll}
             />
           ) : null}
@@ -630,6 +588,8 @@ export default function App() {
               words={words}
               cards={cards}
               usage={usage}
+              captureRequest={captureRequest}
+              onCaptureRequestHandled={() => setCaptureRequest(null)}
               onRefresh={refreshAll}
               onStatus={setStatus}
             />
@@ -640,6 +600,11 @@ export default function App() {
               setup={activeSetup}
               decks={decks}
               words={words}
+              cards={cards}
+              onStudyDeck={(deckId) => {
+                setStudyRequest({ type: "deck", deckId });
+                setView("study");
+              }}
               deckSort={deckSort}
               onSortChange={(sort) => {
                 setDeckSort(sort);
@@ -666,6 +631,18 @@ export default function App() {
           ) : null}
         </div>
       </main>
+      <MobileTabBar
+        active={view}
+        onSelect={(next) => {
+          setMobileMenuOpen(false);
+          setView(next);
+        }}
+        onAdd={() => {
+          setMobileMenuOpen(false);
+          setCaptureRequest("word");
+          setView("library");
+        }}
+      />
     </div>
     </ConfirmationProvider>
   );
@@ -820,6 +797,11 @@ function StudyView({
   decks,
   words,
   cards,
+  studyRequest,
+  onStudyRequestHandled,
+  onOpenSwitcher,
+  onOpenDecks,
+  onAddWords,
   onRefresh
 }: {
   profile: Profile;
@@ -827,82 +809,131 @@ function StudyView({
   decks: Deck[];
   words: WordEntry[];
   cards: CardState[];
+  studyRequest: ScopeSelection | null;
+  onStudyRequestHandled: () => void;
+  onOpenSwitcher: () => void;
+  onOpenDecks: () => void;
+  onAddWords: () => void;
   onRefresh: (nextActiveId?: string, showLoading?: boolean) => Promise<void>;
 }) {
-  const { t, i18n } = useTranslation();
-  const [scope, setScope] = useState<ScopeSelection>({ type: "all" });
+  const { t } = useTranslation();
+  const locale = profile.uiLanguage;
   const [direction, setDirection] = useState<StudyDirection>("mixed");
   const [session, setSession] = useState<SessionState | null>(null);
-  const [allowFuture, setAllowFuture] = useState(false);
+  const [starting, setStarting] = useState(false);
   const answerInputRef = useRef<HTMLInputElement>(null);
-  const nextButtonRef = useRef<HTMLButtonElement>(null);
+  const suggestedRatingRef = useRef<HTMLButtonElement>(null);
   const advancingRef = useRef(false);
+  const answerId = useId();
+  const speechAvailable = canSpeak();
 
   const activePairWords = useMemo(() => words.filter((word) => word.learningSetupId === setup.id), [setup.id, words]);
   const activePairWordIds = useMemo(() => new Set(activePairWords.map((word) => word.id)), [activePairWords]);
-  const dueCount = useMemo(
-    () => cards.filter((card) => activePairWordIds.has(card.wordId) && new Date(card.due) <= new Date()).length,
-    [activePairWordIds, cards]
+  const pairCards = useMemo(() => cards.filter((card) => activePairWordIds.has(card.wordId)), [activePairWordIds, cards]);
+  const directionCards = useMemo(
+    () => (direction === "mixed" ? pairCards : pairCards.filter((card) => card.direction === direction)),
+    [direction, pairCards]
   );
+  const cardsByWord = useMemo(() => groupCardsByWord(pairCards), [pairCards]);
+  // Bumped when a card becomes due, at midnight and when the app returns to the foreground,
+  // so the counts below are recomputed even if nothing else re-renders Today.
+  const [clock, setClock] = useState(() => Date.now());
+  const forecast = useMemo(() => dueForecast(directionCards, new Date(clock)), [clock, directionCards]);
+  const now = new Date(Math.max(clock, Date.now()));
+  const dueCount = directionCards.filter((card) => new Date(card.due) <= now).length;
+  const deckStats = useMemo(() => {
+    const current = new Date(clock);
+    return decks.map((deck) => {
+      const deckWords = activePairWords.filter((word) => wordDeckIds(word).includes(deck.id));
+      const deckWordIds = new Set(deckWords.map((word) => word.id));
+      return {
+        deck,
+        words: deckWords.length,
+        due: directionCards.filter((card) => deckWordIds.has(card.wordId) && new Date(card.due) <= current).length,
+        learned: deckWords.filter((word) => wordStrength(cardsByWord.get(word.id)) >= 2).length
+      };
+    });
+  }, [activePairWords, cardsByWord, clock, decks, directionCards]);
 
-  async function startSession(includeFuture = false) {
-    await ensureCardsForWords(activePairWords);
-    const latestCards = await db.cards.where("profileId").equals(profile.id).toArray();
-    const scopedWords = filterWordsByScope(activePairWords, scope);
-    const wordMap = new Map(scopedWords.map((word) => [word.id, word]));
-    const directions = direction === "mixed" ? cardDirections : [direction];
-    const now = new Date();
-    const queue = shuffle(
-      latestCards
-        .filter((card) => wordMap.has(card.wordId))
-        .filter((card) => directions.includes(card.direction))
-        .filter((card) => includeFuture || new Date(card.due) <= now)
-        .map((card) => ({ card, word: wordMap.get(card.wordId)! }))
-    );
+  useEffect(() => {
+    if (session) return;
 
-    setAllowFuture(false);
+    const current = Date.now();
+    const nextDue = directionCards.reduce((next, card) => {
+      const due = new Date(card.due).getTime();
+      return due > current && due < next ? due : next;
+    }, Number.POSITIVE_INFINITY);
+    const nextMidnight = addDays(startOfLocalDay(new Date(current)), 1).getTime();
+    // setTimeout overflows above 2^31-1 ms (about 24.8 days); the effect re-arms when it fires.
+    const delay = Math.min(Math.min(nextDue, nextMidnight) - current + 250, 2_147_483_647);
+    const timeout = window.setTimeout(() => setClock(Date.now()), Math.max(0, delay));
+    const refreshOnForeground = () => {
+      if (document.visibilityState === "visible") setClock(Date.now());
+    };
+    document.addEventListener("visibilitychange", refreshOnForeground);
+    window.addEventListener("focus", refreshOnForeground);
+    window.addEventListener("pageshow", refreshOnForeground);
+    return () => {
+      window.clearTimeout(timeout);
+      document.removeEventListener("visibilitychange", refreshOnForeground);
+      window.removeEventListener("focus", refreshOnForeground);
+      window.removeEventListener("pageshow", refreshOnForeground);
+    };
+  }, [clock, directionCards, session]);
 
-    if (queue.length === 0) {
+  // Cards can fall due while a session or its summary is open, when the timer above is paused.
+  // Re-read the time on returning to Today so every count, deck badges included, is current.
+  const onToday = session === null;
+  useEffect(() => {
+    if (onToday) setClock(Date.now());
+  }, [onToday]);
+
+  useEffect(() => {
+    if (!studyRequest) return;
+    onStudyRequestHandled();
+    void startSession(false, studyRequest);
+  }, [studyRequest]);
+
+  async function startSession(includeFuture = false, scope: ScopeSelection = { type: "all" }, onlyCardIds?: Set<string>) {
+    if (starting) return;
+    setStarting(true);
+    try {
+      await ensureCardsForWords(activePairWords);
+      const latestCards = await db.cards.where("learningSetupId").equals(setup.id).toArray();
+      const scopedWords = filterWordsByScope(activePairWords, scope);
+      const wordMap = new Map(scopedWords.map((word) => [word.id, word]));
+      const directions = direction === "mixed" ? cardDirections : [direction];
+      const startedAt = new Date();
+      const queue = shuffle(
+        latestCards
+          .filter((card) => wordMap.has(card.wordId))
+          .filter((card) => (onlyCardIds ? onlyCardIds.has(card.id) : directions.includes(card.direction)))
+          .filter((card) => includeFuture || onlyCardIds || new Date(card.due) <= startedAt)
+          .map((card) => ({ card, word: wordMap.get(card.wordId)! }))
+      );
+      const [current, ...rest] = queue;
       setSession({
-        queue: [],
+        queue: rest,
+        current,
         reviewed: 0,
         correct: 0,
-        streak: 0,
-        bestStreak: 0,
+        again: [],
+        latest: {},
         answer: "",
         revealed: false,
-        closeAccepted: false,
-        paused: false
+        closeAccepted: false
       });
-      return;
+    } finally {
+      setStarting(false);
     }
-
-    const [current, ...rest] = queue;
-    setSession({
-      queue: rest,
-      current,
-      reviewed: 0,
-      correct: 0,
-      streak: 0,
-      bestStreak: 0,
-      answer: "",
-      revealed: false,
-      closeAccepted: false,
-      paused: false
-    });
   }
 
   function submitAnswer() {
-    if (!session?.current) {
+    if (!session?.current || !session.answer.trim()) {
       return;
     }
 
-    if (!session.answer.trim()) {
-      return;
-    }
-
-    const accepted = getAcceptedAnswers(session.current);
-    const match = evaluateAnswer(session.answer, accepted);
+    const match = evaluateAnswer(session.answer, getAcceptedAnswers(session.current));
     setSession({ ...session, revealed: true, match, selectedRating: defaultRatingForMatch(match, false) });
   }
 
@@ -911,85 +942,73 @@ function StudyView({
       return;
     }
 
-    setSession({
-      ...session,
-      answer: "",
-      revealed: true,
-      match: "wrong",
-      closeAccepted: false,
-      selectedRating: "again"
-    });
+    setSession({ ...session, answer: "", revealed: true, match: "wrong", closeAccepted: false, selectedRating: "again" });
   }
 
-  async function rateCurrent(rating = session?.selectedRating) {
-    if (!session?.current) {
-      return;
-    }
-    const selectedRating = rating ?? defaultRatingForMatch(session.match ?? "wrong", session.closeAccepted);
-
-    const scheduled = scheduleReview(session.current.card, selectedRating);
-    await db.cards.update(session.current.card.id, scheduled);
-
-    const wasCorrect = session.match === "correct" || (session.match === "close" && session.closeAccepted);
-    const reviewed = session.reviewed + 1;
-    const correct = session.correct + (wasCorrect ? 1 : 0);
-    const streak = wasCorrect ? session.streak + 1 : 0;
-    const nextQueue = [...session.queue];
-
-    if (selectedRating === "again") {
-      nextQueue.push({
-        ...session.current,
-        card: {
-          ...session.current.card,
-          ...scheduled
-        }
-      });
-    }
-
-    const [nextCurrent, ...rest] = nextQueue;
-    setSession({
-      queue: rest,
-      current: nextCurrent,
-      reviewed,
-      correct,
-      streak,
-      bestStreak: Math.max(session.bestStreak, streak),
-      answer: "",
-      revealed: false,
-      closeAccepted: false,
-      selectedRating: undefined,
-      paused: false
-    });
-
-    await onRefresh();
-  }
-
-  async function advanceStudyCard() {
-    if (!session?.revealed || advancingRef.current) {
+  async function rateCurrent(rating: ReviewRating) {
+    if (!session?.current || advancingRef.current) {
       return;
     }
 
     advancingRef.current = true;
     try {
-      await rateCurrent(session.selectedRating ?? defaultRatingForMatch(session.match ?? "wrong", session.closeAccepted));
+      const scheduled = scheduleReview(session.current.card, rating);
+      await db.cards.update(session.current.card.id, scheduled);
+
+      const wasCorrect = session.match === "correct" || (session.match === "close" && session.closeAccepted);
+      const rated: StudyCard = { ...session.current, card: { ...session.current.card, ...scheduled } };
+      const nextQueue = rating === "again" ? [...session.queue, rated] : [...session.queue];
+      const again = rating === "again" && !session.again.includes(rated.card.id)
+        ? [...session.again, rated.card.id]
+        : session.again;
+      const [nextCurrent, ...rest] = nextQueue;
+      setSession({
+        queue: rest,
+        current: nextCurrent,
+        reviewed: session.reviewed + 1,
+        correct: session.correct + (wasCorrect ? 1 : 0),
+        again,
+        latest: { ...session.latest, [rated.card.id]: { item: rated, rating } },
+        answer: "",
+        revealed: false,
+        closeAccepted: false,
+        selectedRating: undefined
+      });
+
+      await onRefresh();
     } finally {
       advancingRef.current = false;
     }
   }
 
+  function endSession() {
+    if (!session) return;
+    setSession(session.reviewed > 0 ? { ...session, queue: [], current: undefined } : null);
+  }
+
+  function insertCharacter(character: string) {
+    const input = answerInputRef.current;
+    if (!input || !session || session.revealed) return;
+    const start = input.selectionStart ?? session.answer.length;
+    const end = input.selectionEnd ?? start;
+    setSession({ ...session, answer: `${session.answer.slice(0, start)}${character}${session.answer.slice(end)}` });
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(start + character.length, start + character.length);
+    });
+  }
+
   useEffect(() => {
-    if (session?.revealed) {
-      if (!isCoarsePointer()) {
-        nextButtonRef.current?.focus();
-      }
+    if (session?.revealed && !isCoarsePointer()) {
+      suggestedRatingRef.current?.focus();
     }
   }, [session?.revealed, session?.current?.card.id]);
 
   useEffect(() => {
-    if (session?.current && !session.revealed && !session.paused) {
+    if (session?.current && !session.revealed && !isCoarsePointer()) {
       answerInputRef.current?.focus();
     }
-  }, [session?.current?.card.id, session?.revealed, session?.paused]);
+  }, [session?.current?.card.id, session?.revealed]);
 
   useEffect(() => {
     if (!session?.revealed) {
@@ -997,84 +1016,107 @@ function StudyView({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Enter" || event.repeat) {
+      if (event.repeat || event.altKey || event.ctrlKey || event.metaKey) {
         return;
       }
 
       const target = event.target as HTMLElement | null;
-      const inputTarget = target?.closest("input") as HTMLInputElement | null;
-      if (target?.closest("button, a, select, textarea, [contenteditable='true']") || (inputTarget && !inputTarget.disabled)) {
+      if (target?.closest("input, select, textarea, [contenteditable='true']")) {
         return;
       }
 
-      event.preventDefault();
-      void advanceStudyCard();
+      const ratingIndex = ["1", "2", "3", "4"].indexOf(event.key);
+      if (ratingIndex >= 0) {
+        event.preventDefault();
+        void rateCurrent(ratings[ratingIndex]);
+        return;
+      }
+
+      if (event.key === "Enter" && !target?.closest("button, a")) {
+        event.preventDefault();
+        void rateCurrent(session.selectedRating ?? "again");
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [session?.revealed, session?.selectedRating, session?.closeAccepted, session?.match, session?.current?.card.id]);
-
-  if (session?.paused) {
-    return (
-      <section className="grid gap-4">
-        <ViewTitle title={t("study.paused")} />
-        <div className="app-panel p-4">
-          <p className="app-muted text-sm">
-            {session.reviewed} {t("study.reviewed")} · {session.queue.length + (session.current ? 1 : 0)} {t("study.remaining")}
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              className="app-button app-button-primary"
-              onClick={() => setSession({ ...session, paused: false })}
-              data-tooltip={t("study.resumeHint")}
-            >
-              {t("study.resume")}
-            </button>
-            <button className="app-button app-button-ghost" onClick={() => setSession(null)} data-tooltip={t("study.abandonHint")}>
-              {t("study.abandon")}
-            </button>
-          </div>
-        </div>
-      </section>
-    );
-  }
+  }, [session]);
 
   if (session && !session.current) {
-    const accuracy = session.reviewed === 0 ? 0 : Math.round((session.correct / session.reviewed) * 100);
     if (session.reviewed === 0) {
       return (
-        <section className="grid gap-4">
-          <ViewTitle title={t("study.noDueTitle")} />
-          <div className="app-warning rounded-xl border p-4">
-            <p className="font-semibold">{t("study.noCards")}</p>
-            <p className="mt-1 text-sm">{t("study.noDueBody")}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button className="app-button app-button-secondary" onClick={() => startSession(true)} data-tooltip={t("study.practiceAnywayHint")}>
-                <RotateCcw size={18} />
-                {t("study.includeFuture")}
-              </button>
-              <button className="app-button app-button-ghost" onClick={() => setSession(null)} data-tooltip={t("study.backToStudyHint")}>
-                {t("study.backToStudy")}
-              </button>
-            </div>
+        <section className="study-summary grid gap-4">
+          <div className="grid gap-2">
+            <h1 className="app-display text-3xl">{t("ui.nothingDue")}</h1>
+            <p className="app-muted">{t("study.noDueBody")}</p>
+          </div>
+          <div className="study-summary-actions">
+            <button className="app-button app-button-primary app-button-large" type="button" onClick={() => startSession(true)} disabled={starting}>
+              <RotateCcw size={18} />
+              {t("study.includeFuture")}
+            </button>
+            <button className="app-button app-button-secondary app-button-large" type="button" onClick={() => setSession(null)}>
+              {t("ui.done")}
+            </button>
           </div>
         </section>
       );
     }
 
+    const today = startOfLocalDay(now);
+    const tomorrowCount = countDueBetween(pairCards, addDays(today, 1), addDays(today, 2));
+    const weekCount = countDueBetween(pairCards, now, addDays(today, 7));
+    // Only cards whose most recent rating was Again still need an immediate retry.
+    const retry = Object.values(session.latest).filter((entry) => entry.rating === "again").map((entry) => entry.item);
     return (
-      <section className="grid gap-4">
-        <ViewTitle title={t("study.summary")} />
-        <p className="app-muted text-sm">{t("study.summaryBody")}</p>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Metric label={t("study.reviewed")} value={session.reviewed.toString()} hint={t("study.reviewedHint")} />
-          <Metric label={t("study.accuracy")} value={`${accuracy}%`} hint={t("study.accuracyHint")} />
-          <Metric label={t("study.streak")} value={session.bestStreak.toString()} hint={t("study.streakHint")} />
+      <section className="study-summary grid gap-4">
+        <div className="grid gap-3">
+          <span className="study-summary-mark" aria-hidden="true"><Check size={28} strokeWidth={2.6} /></span>
+          <h1 className="app-display text-3xl">{t("ui.sessionFinished")}</h1>
         </div>
-        <button className="app-button app-button-primary w-fit" onClick={() => setSession(null)} data-tooltip={t("study.backToStudyHint")}>
-          {t("study.backToStudy")}
-        </button>
+        <div className="study-summary-stats">
+          <div className="study-stat"><span className="study-stat-value">{session.reviewed}</span><span className="study-stat-label">{t("ui.cardsReviewed")}</span></div>
+          <div className="study-stat"><span className="study-stat-value">{session.correct}</span><span className="study-stat-label">{t("ui.answeredCorrectly")}</span></div>
+          <div className="study-stat"><span className="study-stat-value">{session.again.length}</span><span className="study-stat-label">{t("ui.ratedAgain")}</span></div>
+        </div>
+        {retry.length > 0 ? (
+          <section className="app-surface-card grid gap-2 p-4" aria-labelledby="study-again-heading">
+            <h2 id="study-again-heading" className="app-display text-base">{t("ui.stillToReview")}</h2>
+            {retry.map((item) => (
+              <div key={item.card.id} className="study-again-row">
+                <span className="min-w-0">
+                  <span className="app-heading block truncate font-semibold">{getPrompt(item)}</span>
+                  <span className="app-muted block truncate text-sm">{getAcceptedAnswers(item).join(" / ")}</span>
+                </span>
+                <span className="app-muted shrink-0 text-sm">
+                  {t("ui.backIn", { time: formatInterval(new Date(item.card.due).getTime() - now.getTime(), locale) })}
+                </span>
+              </div>
+            ))}
+          </section>
+        ) : null}
+        <section className="app-surface-card flex flex-wrap items-center justify-between gap-3 p-4" aria-labelledby="study-next-heading">
+          <h2 id="study-next-heading" className="app-display text-base">{t("ui.nextReviews")}</h2>
+          <span className="app-muted flex gap-4 text-sm">
+            <span><strong className="app-heading">{tomorrowCount}</strong> {t("ui.tomorrow")}</span>
+            <span><strong className="app-heading">{weekCount}</strong> {t("ui.thisWeek")}</span>
+          </span>
+        </section>
+        <div className="study-summary-actions">
+          <button className="app-button app-button-dark app-button-large" type="button" onClick={() => setSession(null)}>
+            {t("ui.done")}
+          </button>
+          {retry.length > 0 ? (
+            <button
+              className="app-button app-button-secondary app-button-large"
+              type="button"
+              disabled={starting}
+              onClick={() => startSession(true, { type: "all" }, new Set(retry.map((item) => item.card.id)))}
+            >
+              {t("ui.reviewAgainNow")}
+            </button>
+          ) : null}
+        </div>
       </section>
     );
   }
@@ -1082,188 +1124,323 @@ function StudyView({
   if (session?.current) {
     const prompt = getPrompt(session.current);
     const accepted = getAcceptedAnswers(session.current);
-    const resultTone = !session.revealed
-      ? "pending"
-      : session.match === "correct" || (session.match === "close" && session.closeAccepted)
-        ? "correct"
-        : session.match === "close"
-          ? "close"
-          : "wrong";
-    const resultLabelClass =
-      resultTone === "correct" ? "text-emerald-500" : resultTone === "wrong" ? "text-rose-500" : "text-amber-500";
+    const promptLanguage = session.current.card.direction === "target-base" ? setup.targetLanguage : setup.baseLanguage;
+    const answerLanguage = session.current.card.direction === "target-base" ? setup.baseLanguage : setup.targetLanguage;
+    const remaining = session.queue.length + 1;
+    const total = session.reviewed + remaining;
+    const tone = session.match === "correct" || (session.match === "close" && session.closeAccepted)
+      ? "correct"
+      : session.match === "close"
+        ? "close"
+        : "wrong";
+    const suggested = session.selectedRating ?? "again";
+    const previewTime = new Date();
+    const previews = session.revealed
+      ? ratings.map((rating) => {
+          const due = scheduleReview(session.current!.card, rating, previewTime).due;
+          return { rating, interval: due ? formatInterval(new Date(due).getTime() - previewTime.getTime(), locale) : "" };
+        })
+      : [];
     return (
-      <section className="grid gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <ViewTitle title={t("study.title")} />
-          <div className="flex flex-wrap gap-2">
-            <button className="app-button app-button-secondary" onClick={() => setSession({ ...session, paused: true })} data-tooltip={t("study.pauseHint")}>
-              {t("study.pause")}
-            </button>
-            <button className="app-button app-button-ghost" onClick={() => setSession(null)} data-tooltip={t("study.abandonHint")}>
-              {t("study.abandon")}
-            </button>
+      <section className="study-session" aria-label={t("study.title")}>
+        <div className="study-session-top">
+          <button className="study-round-button" type="button" onClick={endSession} aria-label={t("study.abandon")} data-tooltip={t("study.abandon")}>
+            <X size={20} />
+          </button>
+          <div
+            className="study-progress"
+            role="progressbar"
+            aria-label={t("ui.sessionProgress")}
+            aria-valuemin={0}
+            aria-valuemax={total}
+            aria-valuenow={session.reviewed}
+          >
+            <span style={{ width: `${Math.round((session.reviewed / total) * 100)}%` }} />
           </div>
+          <span className="study-progress-count">{session.reviewed + 1}/{total}</span>
         </div>
-        <div className="app-panel p-4">
-          <div className={`study-card study-card-${resultTone} ${session.revealed ? "study-card-revealed" : ""}`}>
-            <div className="study-card-inner">
-              <div className="study-card-face study-card-front">
-                <div className="mb-4 flex flex-wrap items-center gap-2">
-                  <span className="app-chip">{directionLabel(session.current.card.direction, t)}</span>
-                  <span className="app-chip">{session.reviewed} {t("study.reviewed")}</span>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <p className="app-heading text-2xl font-bold">{prompt}</p>
-                  <button
-                    className="app-button app-button-secondary h-11 w-11 shrink-0 p-0"
-                    type="button"
-                    disabled
-                    aria-label={t("study.audioPlaceholder")}
-                    data-tooltip={t("study.audioPlaceholder")}
-                  >
-                    <Volume2 size={18} />
-                  </button>
-                </div>
+
+        {!session.revealed ? (
+          <>
+            <div className="study-prompt-card">
+              <div className="study-prompt-meta">
+                <span className="study-chip">
+                  <FlagIcon code={promptLanguage} />
+                  {directionLabel(session.current.card.direction, t)}
+                </span>
+                <span className="study-chip study-chip-accent">
+                  {session.current.card.reviewCount === 0 ? t("common.new") : t("ui.review")}
+                </span>
               </div>
-              <div className="study-card-face study-card-back">
-                <div className="study-card-back-layout">
-                  <div className="min-w-0">
-                    <p className={`text-sm font-semibold ${resultLabelClass}`}>
-                      {session.match === "correct" ? t("study.correctAnswer") : null}
-                      {session.match === "close" ? t("study.closeAnswer") : null}
-                      {session.match === "wrong" ? t("study.wrongAnswer") : null}
-                    </p>
-                    <p className="app-subtle mt-3 text-xs font-semibold">{directionLabel(session.current.card.direction, t)}</p>
-                    <p className="app-muted mt-1 text-sm font-medium">{prompt}</p>
-                    <p className="mt-2 text-sm font-semibold opacity-70">{t("study.reveal")}</p>
-                    <p className="study-answer-reveal mt-1">{accepted.join(" / ")}</p>
-                    {session.match === "close" ? (
-                      <label className="mt-3 flex items-center gap-2 text-sm font-semibold">
-                        <input
-                          type="checkbox"
-                          checked={session.closeAccepted}
-                          onChange={(event) =>
-                            setSession({
-                              ...session,
-                              closeAccepted: event.target.checked,
-                              selectedRating: defaultRatingForMatch(session.match ?? "wrong", event.target.checked)
-                            })
-                          }
-                        />
-                        {t("study.acceptClose")}
-                      </label>
-                    ) : null}
-                  </div>
-                  <div className="study-rating-rail" aria-label={t("study.ratingHelp")}>
-                    {ratings.map((rating) => (
-                      <button
-                        key={rating}
-                        className={`app-button study-rating-button ${
-                          session.selectedRating === rating
-                            ? rating === "again"
-                              ? "app-button-danger"
-                              : "app-button-primary"
-                            : "app-button-secondary"
-                        }`}
-                        onClick={() => setSession({ ...session, selectedRating: rating })}
-                        data-tooltip={`${t(`study.${rating}`)}: ${t(`study.${rating}Hint`)}`}
-                        type="button"
-                      >
-                        {t(`study.${rating}`)}
-                      </button>
-                    ))}
-                  </div>
+              <p className="study-prompt" lang={promptLanguage}>{prompt}</p>
+              {speechAvailable ? (
+                <button className="study-speak" type="button" onClick={() => speak(prompt, promptLanguage)} aria-label={t("ui.playPronunciation")} data-tooltip={t("ui.playPronunciation")}>
+                  <Volume2 size={22} />
+                </button>
+              ) : null}
+            </div>
+            <form
+              className="study-answer"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitAnswer();
+              }}
+            >
+              <label className="study-answer-label" htmlFor={answerId}>
+                <FlagIcon code={answerLanguage} />
+                {t("ui.answerIn", { language: localizedLanguageName(answerLanguage, locale) })}
+              </label>
+              <input
+                id={answerId}
+                className="app-input study-answer-input"
+                value={session.answer}
+                onChange={(event) => setSession({ ...session, answer: event.target.value })}
+                placeholder={t("study.answerPlaceholder")}
+                ref={answerInputRef}
+                lang={answerLanguage}
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
+                enterKeyHint="done"
+              />
+              {accentKeys[answerLanguage].length > 0 ? (
+                <div className="accent-keys" role="group" aria-label={t("ui.specialCharacters")}>
+                  {accentKeys[answerLanguage].map((character) => (
+                    <button
+                      key={character}
+                      type="button"
+                      className="accent-key"
+                      onPointerDown={(event) => event.preventDefault()}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => insertCharacter(character)}
+                    >
+                      {character}
+                    </button>
+                  ))}
                 </div>
-              </div>
-            </div>
-          </div>
-          <Label text={t("study.answer")}>
-            <input
-              className="app-input text-lg"
-              value={session.answer}
-              onChange={(event) => {
-                if (!session.revealed) {
-                  setSession({ ...session, answer: event.target.value });
-                }
-              }}
-              placeholder={t("study.answerPlaceholder")}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !session.revealed) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  submitAnswer();
-                } else if (event.key === "Enter" && session.revealed) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  void advanceStudyCard();
-                }
-              }}
-              ref={answerInputRef}
-              autoFocus
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-          </Label>
-          {!session.revealed ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button className="app-button app-button-primary" onClick={submitAnswer} disabled={!session.answer.trim()} data-tooltip={t("study.submit")}>
-                <Check size={18} />
-                {t("study.submit")}
-              </button>
-              <button className="app-button app-button-secondary" type="button" onClick={revealUnknownAnswer} data-tooltip={t("study.dontKnowHint")}>
-                {t("study.dontKnow")}
-              </button>
-            </div>
-          ) : (
-            <div className="mt-5 grid gap-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="app-subtle text-xs">
-                  {t("study.selectedRating", {
-                    rating: t(`study.${session.selectedRating ?? "again"}`),
-                    hint: t(`study.${session.selectedRating ?? "again"}Hint`)
-                  })}
-                </p>
-                <button className="app-button app-button-primary" onClick={() => void advanceStudyCard()} type="button" ref={nextButtonRef} data-tooltip={t("study.next")}>
-                  {t("study.next")}
+              ) : null}
+              <div className="study-answer-actions">
+                <button className="app-button app-button-secondary app-button-large" type="button" onClick={revealUnknownAnswer}>
+                  {t("study.dontKnow")}
+                </button>
+                <button className="app-button app-button-primary app-button-large" type="submit" disabled={!session.answer.trim()}>
+                  <Check size={19} strokeWidth={2.6} />
+                  {t("study.submit")}
                 </button>
               </div>
+            </form>
+          </>
+        ) : (
+          <>
+            <div className={`study-result study-result-${tone}`}>
+              <div className="study-result-head">
+                <span className="study-result-icon" aria-hidden="true">
+                  {tone === "wrong" ? <X size={22} strokeWidth={2.6} /> : <Check size={22} strokeWidth={2.6} />}
+                </span>
+                <div className="min-w-0">
+                  <p className="study-result-title">
+                    {tone === "correct" ? t("ui.correct") : tone === "close" ? t("ui.almost") : t("ui.notQuite")}
+                  </p>
+                  <p className="app-muted text-sm">
+                    {session.answer ? t("ui.youTyped", { answer: session.answer }) : t("ui.noAnswer")}
+                  </p>
+                </div>
+              </div>
+              <div className="study-solution">
+                <span className="app-muted text-sm font-semibold" lang={promptLanguage}>{prompt}</span>
+                <span className="study-solution-row">
+                  <span className="study-solution-answer" lang={answerLanguage}>{accepted.join(" / ")}</span>
+                  {speechAvailable ? (
+                    <button className="study-speak study-speak-small" type="button" onClick={() => speak(accepted[0] ?? "", answerLanguage)} aria-label={t("ui.playPronunciation")} data-tooltip={t("ui.playPronunciation")}>
+                      <Volume2 size={20} />
+                    </button>
+                  ) : null}
+                </span>
+              </div>
+              {session.current.word.notes ? (
+                <p className="app-muted text-sm leading-relaxed">
+                  <strong className="app-heading">{t("common.notes")}:</strong> {session.current.word.notes}
+                </p>
+              ) : null}
+              {session.match === "close" ? (
+                <label className="flex min-h-11 items-center gap-2 text-sm font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={session.closeAccepted}
+                    onChange={(event) =>
+                      setSession({
+                        ...session,
+                        closeAccepted: event.target.checked,
+                        selectedRating: defaultRatingForMatch(session.match ?? "wrong", event.target.checked)
+                      })
+                    }
+                  />
+                  {t("study.acceptClose")}
+                </label>
+              ) : null}
             </div>
-          )}
-        </div>
+            <section className="rating-sheet" aria-labelledby="rating-heading">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 id="rating-heading" className="app-display text-lg">{t("ui.rateTitle")}</h2>
+                <span className="app-muted text-xs">{t("ui.nextReview")}</span>
+              </div>
+              <div className="rating-grid">
+                {previews.map(({ rating, interval }, index) => (
+                  <button
+                    key={rating}
+                    ref={rating === suggested ? suggestedRatingRef : undefined}
+                    className={`rating-button rating-button-${rating} ${rating === suggested ? "rating-button-suggested" : ""}`}
+                    type="button"
+                    onClick={() => void rateCurrent(rating)}
+                    aria-keyshortcuts={String(index + 1)}
+                    data-tooltip={t(`study.${rating}Hint`)}
+                  >
+                    <span className="rating-button-name">{t(`study.${rating}`)}</span>
+                    <span className="rating-button-interval">{interval}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="app-muted text-center text-sm">{t("ui.ratingHint", { rating: t(`study.${suggested}`) })}</p>
+            </section>
+          </>
+        )}
       </section>
     );
   }
 
+  const maxForecast = Math.max(1, ...forecast.map((day) => day.count));
+  const weekday = new Intl.DateTimeFormat(locale, { weekday: "short" });
+  const minutes = Math.max(1, Math.round((dueCount * secondsPerCard) / 60));
+  const directionOptions: Array<{ value: StudyDirection; label: string; title: string }> = [
+    { value: "target-base", label: `${setup.targetLanguage.toUpperCase()}→${setup.baseLanguage.toUpperCase()}`, title: t("study.targetBase") },
+    { value: "base-target", label: `${setup.baseLanguage.toUpperCase()}→${setup.targetLanguage.toUpperCase()}`, title: t("study.baseTarget") },
+    { value: "mixed", label: t("ui.both"), title: t("study.mixed") }
+  ];
   return (
-    <section className="grid gap-4">
-      <ViewTitle title={t("study.title")} />
-      <div className="app-panel grid gap-3 p-4">
-        <p className="app-muted text-sm">{t("study.setupHelp")}</p>
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
-          <ScopeSelect scope={scope} setScope={setScope} decks={decks} />
-          <DirectionPicker value={direction} setup={setup} onChange={setDirection} />
-          <DueStatus count={dueCount} />
+    <section className="today grid gap-4">
+      <header className="today-header">
+        <div className="min-w-0">
+          <p className="app-muted text-sm font-semibold">
+            {new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "short" }).format(now)}
+          </p>
+          <h1 className="app-display text-3xl" lang={setup.targetLanguage}>{greetings[setup.targetLanguage]}</h1>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="app-button app-button-primary" onClick={() => startSession(false)} disabled={activePairWords.length === 0} data-tooltip={t("study.startHint")}>
-            <ChevronRight size={18} />
-            {t("study.start")}
-          </button>
+        <div className="flex shrink-0 items-center gap-2 sm:hidden">
           <button
-            className="app-button app-button-secondary"
-            onClick={() => {
-              setAllowFuture(true);
-              void startSession(true);
-            }}
-            disabled={activePairWords.length === 0 || allowFuture}
-            data-tooltip={t("study.practiceAnywayHint")}
+            className="today-pill"
+            type="button"
+            onClick={onOpenSwitcher}
+            aria-label={`${learningSetupDisplayName(setup, locale)}. ${t("ui.switchProfileOrLanguage")}`}
           >
-            <RotateCcw size={18} />
-            {t("study.includeFuture")}
+            <FlagIcon code={setup.targetLanguage} />
+            {setup.targetLanguage.toUpperCase()}
+          </button>
+          <button className="today-avatar" type="button" onClick={onOpenSwitcher} aria-label={`${profile.name}. ${t("ui.switchProfileOrLanguage")}`}>
+            {initials(profile.name)}
           </button>
         </div>
-      </div>
+      </header>
+
+      {activePairWords.length === 0 ? (
+        <section className="today-empty">
+          <h2 className="app-display text-xl">{t("ui.emptyTitle")}</h2>
+          <p className="app-muted">{t("ui.emptyBody")}</p>
+          <button className="app-button app-button-primary app-button-large w-fit" type="button" onClick={onAddWords}>
+            <Plus size={18} />
+            {t("ui.addWords")}
+          </button>
+        </section>
+      ) : (
+        <div className="today-grid">
+          <section className="forecast-card" aria-labelledby="forecast-heading">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 id="forecast-heading" className="app-display text-lg">{t("ui.comingUp")}</h2>
+              <span className="forecast-meta">
+                {t("ui.wordCount", { count: activePairWords.length })} · {t("ui.deckCount", { count: decks.length })}
+              </span>
+            </div>
+            <div
+              className="forecast-bars"
+              role="img"
+              aria-label={forecast.map((day, index) => `${index === 0 ? t("ui.today") : weekday.format(day.date)}: ${day.count}`).join(", ")}
+            >
+              {forecast.map((day, index) => (
+                <div key={day.date.toISOString()} className={`forecast-day ${index === 0 ? "forecast-day-today" : ""}`}>
+                  <span className="forecast-count">{day.count}</span>
+                  <span className="forecast-bar" style={{ height: `${Math.max(3, Math.round((day.count / maxForecast) * 56))}px` }} />
+                  <span className="forecast-label">{index === 0 ? t("ui.today") : weekday.format(day.date)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="review-card" aria-labelledby="review-heading">
+            <div className="flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                <h2 id="review-heading" className="review-card-label">{t("ui.dueNow")}</h2>
+                <p className="review-card-count">{dueCount}</p>
+                <p className="review-card-label">{dueCount > 0 ? t("ui.aboutMinutes", { count: minutes }) : t("ui.nothingDue")}</p>
+              </div>
+              <div className="review-direction" role="group" aria-label={t("study.direction")}>
+                {directionOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={direction === option.value}
+                    aria-label={option.title}
+                    data-tooltip={option.title}
+                    onClick={() => setDirection(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button className="review-card-start" type="button" onClick={() => startSession(false)} disabled={dueCount === 0 || starting}>
+              {starting ? <LoadingIndicator label={t("ui.startReview")} /> : null}
+              {t("ui.startReview")}
+              <ArrowRight size={20} strokeWidth={2.4} />
+            </button>
+            <button className="review-card-secondary" type="button" onClick={() => startSession(true)} disabled={starting}>
+              <RotateCcw size={16} />
+              {t("study.includeFuture")}
+            </button>
+          </section>
+        </div>
+      )}
+
+      {activePairWords.length > 0 ? (
+        <section className="grid gap-2" aria-labelledby="today-decks-heading">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="today-decks-heading" className="app-display text-lg">{t("ui.yourDecks")}</h2>
+            <button className="text-button" type="button" onClick={onOpenDecks}>{t("ui.seeAll")}</button>
+          </div>
+          <div className="deck-tiles">
+            {deckStats.map(({ deck, words: wordCount, due, learned }, index) => (
+              <button
+                key={deck.id}
+                className="deck-tile"
+                type="button"
+                onClick={() => startSession(due === 0, { type: "deck", deckId: deck.id })}
+                disabled={wordCount === 0 || starting}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className={`deck-badge deck-tone-${index % deckToneCount}`} aria-hidden="true">{deck.name.charAt(0).toLocaleUpperCase()}</span>
+                  {due > 0 ? <span className="due-pill">{t("ui.dueCount", { count: due })}</span> : null}
+                </span>
+                <span className="deck-tile-name">{deck.name}</span>
+                <span className="deck-tile-meta">
+                  {t("ui.wordCount", { count: wordCount })} · {t("ui.learnedCount", { count: learned })}
+                </span>
+                <span className={`deck-meter deck-tone-${index % deckToneCount}`} aria-hidden="true">
+                  <span style={{ width: `${wordCount ? Math.round((learned / wordCount) * 100) : 0}%` }} />
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }
@@ -1275,6 +1452,8 @@ function LibraryView({
   words,
   cards,
   usage,
+  captureRequest,
+  onCaptureRequestHandled,
   onRefresh,
   onStatus
 }: {
@@ -1284,10 +1463,12 @@ function LibraryView({
   words: WordEntry[];
   cards: CardState[];
   usage: TranslationUsage | null;
+  captureRequest: "word" | "scan" | null;
+  onCaptureRequestHandled: () => void;
   onRefresh: () => Promise<void>;
   onStatus: (message: string) => void;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const confirm = useConfirm();
   const [form, setForm] = useState<WordFormState>(() => ({ ...emptyWordForm, deckId: preferredLibraryDeckId(decks, setup.baseLanguage) }));
   const [captureDialog, setCaptureDialog] = useState<"word" | "scan" | null>(null);
@@ -1295,6 +1476,7 @@ function LibraryView({
   const wordTranslationHintId = useId();
   const suggestionRequest = useRef<AbortController | null>(null);
   const [savingWord, setSavingWord] = useState(false);
+  const [savingScan, setSavingScan] = useState(false);
   const [wordStatus, setWordStatus] = useState("");
   const [editingWord, setEditingWord] = useState<WordEntry | null>(null);
   const [editForm, setEditForm] = useState<WordFormState>({ ...emptyWordForm });
@@ -1306,10 +1488,10 @@ function LibraryView({
   const [query, setQuery] = useState("");
   const [deckFilter, setDeckFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<ReviewStatus>("all");
-  const [showFilters, setShowFilters] = useState(false);
-  const [wordPage, setWordPage] = useState(1);
-  const [wordsPerPage, setWordsPerPage] = useState(10);
+  const [visibleCount, setVisibleCount] = useState(libraryPageSize);
   const [wordFormSubmitted, setWordFormSubmitted] = useState(false);
+  const [lastAdded, setLastAdded] = useState<{ word: string; deck: string } | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
   const translationLimitReached = (usage?.count ?? 0) >= myMemoryDailyLimit;
   const translationCount = usage?.count ?? 0;
   const translationRemaining = Math.max(0, myMemoryDailyLimit - translationCount);
@@ -1351,25 +1533,61 @@ function LibraryView({
 
   useEffect(() => () => suggestionRequest.current?.abort(), []);
 
+  useEffect(() => {
+    if (!captureRequest) return;
+    setCaptureDialog(captureRequest);
+    onCaptureRequestHandled();
+  }, [captureRequest]);
+
   const cardByWord = useMemo(() => groupCardsByWord(cards), [cards]);
+  const wordProgress = useMemo(() => {
+    const now = new Date();
+    return new Map(words.map((word) => {
+      const wordCards = cardByWord.get(word.id) ?? [];
+      return [word.id, {
+        due: wordCards.some((card) => new Date(card.due) <= now && card.reviewCount > 0),
+        isNew: wordCards.every((card) => card.reviewCount === 0),
+        strength: wordStrength(wordCards)
+      }];
+    }));
+  }, [cardByWord, words]);
+  const statusCounts = useMemo(() => {
+    const values = [...wordProgress.values()];
+    return {
+      all: words.length,
+      due: values.filter((value) => value.due).length,
+      new: values.filter((value) => value.isNew).length,
+      learned: values.filter((value) => value.strength >= 2).length
+    };
+  }, [wordProgress, words.length]);
   const filteredWords = useMemo(() => words.filter((word) => {
     const haystack = `${word.targetText} ${word.translations.join(" ")} ${word.notes}`.toLocaleLowerCase();
     const matchesQuery = !query || haystack.includes(query.toLocaleLowerCase());
     const matchesDeck = deckFilter === "all" || wordDeckIds(word).includes(deckFilter);
-    const wordCards = cardByWord.get(word.id) ?? [];
+    const status = wordProgress.get(word.id);
     const matchesStatus =
       statusFilter === "all" ||
-      (statusFilter === "due" && wordCards.some((card) => new Date(card.due) <= new Date())) ||
-      (statusFilter === "new" && wordCards.every((card) => card.reviewCount === 0)) ||
-      (statusFilter === "learned" && wordCards.some((card) => card.reviewCount > 0));
+      (statusFilter === "due" && status?.due) ||
+      (statusFilter === "new" && status?.isNew) ||
+      (statusFilter === "learned" && (status?.strength ?? 0) >= 2);
 
     return matchesQuery && matchesDeck && matchesStatus;
-  }), [cardByWord, deckFilter, query, statusFilter, words]);
-  const wordPageCount = Math.max(1, Math.ceil(filteredWords.length / wordsPerPage));
-  const safeWordPage = Math.min(wordPage, wordPageCount);
-  const wordPageStart = filteredWords.length === 0 ? 0 : (safeWordPage - 1) * wordsPerPage + 1;
-  const wordPageEnd = Math.min(safeWordPage * wordsPerPage, filteredWords.length);
-  const pagedWords = filteredWords.slice((safeWordPage - 1) * wordsPerPage, safeWordPage * wordsPerPage);
+  }).sort((left, right) => right.createdAt.localeCompare(left.createdAt)), [deckFilter, query, statusFilter, wordProgress, words]);
+  const visibleWords = filteredWords.slice(0, visibleCount);
+  const wordGroups = useMemo(() => {
+    const today = startOfLocalDay(new Date()).getTime();
+    const yesterday = addDays(new Date(today), -1).getTime();
+    const groups: Array<{ key: string; label: string; words: WordEntry[] }> = [
+      { key: "today", label: t("ui.addedToday"), words: [] },
+      { key: "yesterday", label: t("ui.addedYesterday"), words: [] },
+      { key: "earlier", label: t("ui.addedEarlier"), words: [] }
+    ];
+    for (const word of visibleWords) {
+      const created = new Date(word.createdAt).getTime();
+      groups[created >= today ? 0 : created >= yesterday ? 1 : 2].words.push(word);
+    }
+    return groups.filter((group) => group.words.length > 0);
+  }, [t, visibleWords]);
   const targetMissing = wordFormSubmitted && !form.targetText.trim();
   const translationsMissing = wordFormSubmitted && splitTranslations(form.translations).length === 0;
   const editTargetMissing = editFormSubmitted && !editForm.targetText.trim();
@@ -1384,40 +1602,8 @@ function LibraryView({
   }, [editForm.targetText, editingWord, words]);
 
   useEffect(() => {
-    setWordPage(1);
-  }, [deckFilter, query, statusFilter, wordsPerPage]);
-
-  useEffect(() => {
-    setWordPage((current) => Math.min(current, wordPageCount));
-  }, [wordPageCount]);
-
-  const wordPager = filteredWords.length > 0 ? (
-    <div className="flex items-center gap-2">
-      <button
-        className="app-button app-button-secondary app-icon-button"
-        type="button"
-        onClick={() => setWordPage((current) => Math.max(1, current - 1))}
-        disabled={safeWordPage <= 1}
-        aria-label={t("common.previous")}
-        data-tooltip={t("common.previous")}
-      >
-        <ChevronLeft size={17} />
-      </button>
-      <span className="app-subtle min-w-12 text-center text-xs font-semibold">
-        {safeWordPage} / {wordPageCount}
-      </span>
-      <button
-        className="app-button app-button-secondary app-icon-button"
-        type="button"
-        onClick={() => setWordPage((current) => Math.min(wordPageCount, current + 1))}
-        disabled={safeWordPage >= wordPageCount}
-        aria-label={t("common.next")}
-        data-tooltip={t("common.next")}
-      >
-        <ChevronRight size={17} />
-      </button>
-    </div>
-  ) : null;
+    setVisibleCount(libraryPageSize);
+  }, [deckFilter, query, statusFilter]);
 
   async function fetchSuggestions(automatic = false) {
     const targetText = form.targetText.trim();
@@ -1506,8 +1692,10 @@ function LibraryView({
       setSavingWord(false);
     }
 
+    const savedWord = form.targetText.trim();
+    const savedDeck = decks.find((deck) => deck.id === form.deckId)?.name ?? "";
     resetWordForm();
-    setWordStatus(t("status.saved"));
+    setLastAdded({ word: savedWord, deck: savedDeck });
     await onRefresh();
   }
 
@@ -1537,6 +1725,7 @@ function LibraryView({
     clearSuggestions();
     setWordFormSubmitted(false);
     setWordStatus("");
+    setNotesOpen(false);
     requestAnimationFrame(() => wordInput.current?.focus());
   }
 
@@ -1555,8 +1744,35 @@ function LibraryView({
   function closeCaptureDialog() {
     cancelSuggestions();
     setWordStatus("");
+    setLastAdded(null);
+    // A finished import closes the dialog before the scanner can report that saving ended.
+    setSavingScan(false);
     setCaptureDialog(null);
   }
+
+  // Switching tabs during a save could let the finished save close or reset the other panel.
+  const captureLocked = savingWord || savingScan;
+  const captureTabs = (
+    <div className="capture-tabs" role="tablist" aria-label={t("ui.addWords")}>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={captureDialog === "word"}
+        onClick={() => {
+          setCaptureDialog("word");
+          requestAnimationFrame(() => wordInput.current?.focus());
+        }}
+        disabled={captureLocked}
+      >
+        <Edit2 size={17} />
+        {t("ui.typeTab")}
+      </button>
+      <button type="button" role="tab" aria-selected={captureDialog === "scan"} onClick={() => setCaptureDialog("scan")} disabled={captureLocked}>
+        <Camera size={17} />
+        {t("ui.scanTab")}
+      </button>
+    </div>
+  );
 
   function editWord(word: WordEntry) {
     const deckIds = wordDeckIds(word);
@@ -1628,132 +1844,163 @@ function LibraryView({
 
   return (
     <section className="grid gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <ViewTitle title={t("library.title")} />
-        <div className="flex flex-wrap gap-2">
-          <button className="app-button app-button-primary app-button-compact" type="button" aria-haspopup="dialog" onClick={() => setCaptureDialog("word")}>
-            <Plus size={17} />
-            {t("library.addWord")}
-          </button>
-          <button className="app-button app-button-secondary app-button-compact" type="button" aria-haspopup="dialog" onClick={() => setCaptureDialog("scan")}>
-            <ScanLine size={17} />
-            {t("scan.title")}
+      <header className="view-header">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="app-display text-3xl">{t("library.title")}</h1>
+          <span className="app-muted whitespace-nowrap text-sm font-semibold">{t("ui.wordCount", { count: words.length })}</span>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <span className="hidden sm:contents">
+            <button className="app-button app-button-primary" type="button" aria-haspopup="dialog" onClick={() => setCaptureDialog("word")}>
+              <Plus size={17} />
+              {t("library.addWord")}
+            </button>
+          </span>
+          <button
+            className="app-button app-button-secondary icon-tile"
+            type="button"
+            aria-haspopup="dialog"
+            aria-label={t("scan.title")}
+            data-tooltip={t("scan.title")}
+            onClick={() => setCaptureDialog("scan")}
+          >
+            <ScanLine size={21} />
           </button>
         </div>
-      </div>
-      {captureDialog === "scan" ? (
-        <VocabularyScanner
-          setup={setup}
-          decks={decks}
-          defaultDeckId={preferredLibraryDeckId(decks, setup.baseLanguage)}
-          onRefresh={onRefresh}
-          onClose={closeCaptureDialog}
-          onImported={(count, duplicates) => {
-            onStatus(t(duplicates ? "scan.importedWithDuplicates" : "status.imported", { count, duplicates }));
-            closeCaptureDialog();
-          }}
-        />
-      ) : null}
-      {captureDialog === "word" ? (
-        <Modal title={t("library.addWord")} onClose={closeCaptureDialog} closeDisabled={savingWord}>
-          <form className="grid gap-3" onSubmit={saveWord} noValidate>
-            <fieldset className="grid min-w-0 gap-3" disabled={savingWord}>
-              <div className="grid gap-2">
-              <Label
-                text={
-                  <span className="flex items-center gap-1">
-                    <FlagIcon code={setup.targetLanguage} />
-                    {t("library.targetText")}
-                  </span>
-                }
-              >
-                <input
-                  ref={wordInput}
-                  data-autofocus
-                  className={`app-input ${duplicateWord || targetMissing ? "app-input-warning" : ""}`}
-                  value={form.targetText}
-                  onChange={(event) => {
-                    clearSuggestions();
-                    setWordStatus("");
-                    setForm({ ...form, targetText: event.target.value });
-                  }}
-                  placeholder={t("library.targetPlaceholder")}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  aria-invalid={targetMissing}
-                />
-                {targetMissing ? <span className="app-warning-text text-xs">{t("library.targetRequired")}</span> : null}
-                {duplicateWord ? <span className="app-warning-text text-xs">{t("library.duplicateInline")}</span> : null}
-              </Label>
-                <button
-                  className="app-button app-button-secondary app-button-compact justify-self-end"
-                  type="button"
-                  onClick={() => fetchSuggestions(false)}
-                  disabled={fetching || !form.targetText.trim() || translationLimitReached}
-                  data-tooltip={t("library.fetchSuggestions")}
-                  data-tooltip-placement="top"
-                >
-                  {fetching ? <LoadingIndicator label={t("library.fetchSuggestions")} /> : <Search size={18} />}
-                  {t("library.fetchSuggestions")}
-                </button>
-              </div>
+      </header>
 
-              {suggestions.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5" aria-label={t("library.suggestions")}>
-                  {suggestions.map((suggestion) => (
-                    <button
-                      key={`${suggestion.text}-${suggestion.confidence}`}
-                      className="app-suggestion inline-flex min-h-8 items-center gap-1 rounded-full border px-2.5 py-1 text-sm font-medium transition-colors"
-                      type="button"
-                      onClick={() => {
-                        const next = new Set(splitTranslations(form.translations));
-                        next.add(suggestion.text);
-                        setForm({ ...form, translations: [...next].join("; ") });
-                      }}
-                      data-tooltip={t("library.acceptSuggestion")}
-                    >
-                      {suggestion.text}
-                      <span className="rounded-full bg-black/10 px-1.5 text-[0.68rem]">{Math.round(suggestion.confidence * 100)}%</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <div className="grid gap-1">
+      {captureDialog ? (
+        <Modal title={t("ui.addWords")} onClose={closeCaptureDialog} closeDisabled={captureLocked} toolbar={captureTabs} wide={captureDialog === "scan"}>
+          {/* Both panels stay mounted while the dialog is open so each keeps its draft. */}
+          <div hidden={captureDialog !== "scan"}>
+            <VocabularyScanner
+              setup={setup}
+              decks={decks}
+              defaultDeckId={preferredLibraryDeckId(decks, setup.baseLanguage)}
+              onRefresh={onRefresh}
+              onSavingChange={setSavingScan}
+              onImported={(count, duplicates) => {
+                onStatus(t(duplicates ? "scan.importedWithDuplicates" : "status.imported", { count, duplicates }));
+                closeCaptureDialog();
+              }}
+            />
+          </div>
+          <div hidden={captureDialog !== "word"}>
+          <form className="grid gap-4" onSubmit={saveWord} noValidate>
+            {lastAdded ? (
+              <p className="capture-success" role="status">
+                <Check size={18} strokeWidth={2.6} aria-hidden="true" />
+                <span>{t("ui.addedTo", { word: lastAdded.word, deck: lastAdded.deck })}</span>
+              </p>
+            ) : null}
+            <fieldset className="grid min-w-0 gap-4" disabled={savingWord}>
+              <div className="grid gap-2">
                 <Label
                   text={
-                    <span className="flex items-center gap-1">
-                      <FlagIcon code={setup.baseLanguage} />
-                      {t("common.translations")}
+                    <span className="flex items-center gap-1.5">
+                      <FlagIcon code={setup.targetLanguage} />
+                      {localizedLanguageName(setup.targetLanguage, profile.uiLanguage)}
                     </span>
                   }
                 >
                   <input
-                    className={`app-input ${translationsMissing ? "app-input-warning" : ""}`}
-                    value={form.translations}
-                    onChange={(event) => setForm({ ...form, translations: event.target.value })}
+                    ref={wordInput}
+                    data-autofocus
+                    className={`app-input capture-input ${duplicateWord || targetMissing ? "app-input-warning" : ""}`}
+                    value={form.targetText}
+                    onChange={(event) => {
+                      clearSuggestions();
+                      setWordStatus("");
+                      setLastAdded(null);
+                      setForm({ ...form, targetText: event.target.value });
+                    }}
+                    placeholder={t("library.targetPlaceholder")}
+                    lang={setup.targetLanguage}
                     autoCapitalize="none"
                     autoCorrect="off"
                     spellCheck={false}
-                    aria-invalid={translationsMissing}
-                    aria-describedby={wordTranslationHintId}
+                    aria-invalid={targetMissing}
                   />
-                  {translationsMissing ? <span className="app-warning-text text-xs">{t("library.translationsRequired")}</span> : null}
+                  {targetMissing ? <span className="app-warning-text text-xs">{t("library.targetRequired")}</span> : null}
+                  {duplicateWord ? <span className="app-warning-text text-xs">{t("library.duplicateInline")}</span> : null}
                 </Label>
+              </div>
+
+              <div className="grid gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="app-label flex items-center gap-1.5 text-sm font-semibold">
+                    <FlagIcon code={setup.baseLanguage} />
+                    {localizedLanguageName(setup.baseLanguage, profile.uiLanguage)}
+                  </span>
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={() => fetchSuggestions(false)}
+                    disabled={fetching || !form.targetText.trim() || translationLimitReached}
+                  >
+                    {fetching ? <LoadingIndicator label={t("library.fetchSuggestions")} /> : <Search size={16} />}
+                    {t("library.fetchSuggestions")}
+                  </button>
+                </div>
+                {suggestions.length > 0 ? (
+                  <div className="flex flex-wrap gap-2" role="group" aria-label={t("library.suggestions")}>
+                    {suggestions.map((suggestion) => {
+                      const chosen = splitTranslations(form.translations).includes(suggestion.text);
+                      return (
+                        <button
+                          key={`${suggestion.text}-${suggestion.confidence}`}
+                          className={`suggestion-chip ${chosen ? "suggestion-chip-chosen" : ""}`}
+                          type="button"
+                          aria-pressed={chosen}
+                          lang={setup.baseLanguage}
+                          onClick={() => {
+                            const next = splitTranslations(form.translations).filter((value) => value !== suggestion.text);
+                            if (!chosen) next.push(suggestion.text);
+                            setForm({ ...form, translations: next.join("; ") });
+                          }}
+                        >
+                          {chosen ? <Check size={15} strokeWidth={3} aria-hidden="true" /> : null}
+                          {suggestion.text}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                <input
+                  className={`app-input ${translationsMissing ? "app-input-warning" : ""}`}
+                  value={form.translations}
+                  onChange={(event) => setForm({ ...form, translations: event.target.value })}
+                  aria-label={t("common.translations")}
+                  placeholder={t("ui.translationsPlaceholder")}
+                  lang={setup.baseLanguage}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  aria-invalid={translationsMissing}
+                  aria-describedby={wordTranslationHintId}
+                />
+                {translationsMissing ? <span className="app-warning-text text-xs">{t("library.translationsRequired")}</span> : null}
                 <p id={wordTranslationHintId} className="app-muted text-xs">{t("library.translationHint")}</p>
               </div>
 
-              <div className="library-capture-options">
+              <div className="capture-options">
                 <AppSelect
-                  label={t("common.deck")}
                   value={form.deckId}
-                  compact
+                  ariaLabel={t("common.deck")}
                   disabled={savingWord}
                   placement="above"
                   wrap
                   options={decks.map((deck) => ({ value: deck.id, label: deck.name }))}
                   onChange={(deckId) => setForm({ ...form, deckId })}
                 />
+                {!notesOpen && !form.notes ? (
+                  <button className="app-button app-button-secondary" type="button" onClick={() => setNotesOpen(true)}>
+                    <Plus size={16} />
+                    {t("ui.note")}
+                  </button>
+                ) : null}
+              </div>
+              {notesOpen || form.notes ? (
                 <Label text={`${t("common.notes")} (${t("common.optional")})`}>
                   <textarea
                     className="app-input library-note-input"
@@ -1761,55 +2008,38 @@ function LibraryView({
                     onChange={(event) => setForm({ ...form, notes: event.target.value })}
                     placeholder={t("library.notesPlaceholder")}
                     autoCapitalize="sentences"
+                    autoFocus={notesOpen && !form.notes}
                   />
                 </Label>
-              </div>
-
-              <div
-                className={`flex items-center justify-between gap-3 rounded-md border px-2.5 py-1.5 text-xs ${
-                  translationLimitReached
-                    ? "app-danger-surface"
-                    : translationQuotaPercent >= 80
-                      ? "app-warning"
-                      : "border-[color:var(--border-subtle)] bg-[var(--subpanel-bg)] app-muted"
-                }`}
-                data-tooltip={t("settings.usage")}
-              >
-                <span>{t("settings.usage")}</span>
-                <span className="font-semibold">
-                  {translationRemaining} / {myMemoryDailyLimit} {t("settings.requestsRemaining")}
-                </span>
-              </div>
+              ) : null}
             </fieldset>
-            <div className="app-divider flex flex-wrap items-center justify-end gap-2 border-t pt-3">
-              <p className="app-muted mr-auto text-sm" role="status">{wordStatus}</p>
-              <button className="app-button app-button-ghost" type="button" onClick={resetWordForm} disabled={savingWord}>
-                {t("common.reset")}
-              </button>
-              <button className="app-button app-button-primary" type="submit" disabled={savingWord}>
-                {savingWord ? <LoadingIndicator label={t("common.add")} /> : <Plus size={18} />}
-                {t("common.add")}
-              </button>
+            <div className="capture-footer">
+              <p className={`text-xs ${translationLimitReached ? "app-warning-text" : "app-muted"}`}>
+                {t("ui.lookupsLeft", { count: translationRemaining })}
+              </p>
+              <p className="app-muted text-sm" role="status">{wordStatus}</p>
+              <div className="flex gap-2">
+                <button className="app-button app-button-ghost" type="button" onClick={resetWordForm} disabled={savingWord}>
+                  {t("common.reset")}
+                </button>
+                <button className="app-button app-button-primary app-button-large" type="submit" disabled={savingWord}>
+                  {savingWord ? <LoadingIndicator label={t("ui.addAndNext")} /> : null}
+                  {t("ui.addAndNext")}
+                  <ArrowRight size={19} strokeWidth={2.4} />
+                </button>
+              </div>
             </div>
           </form>
+          </div>
         </Modal>
       ) : null}
 
       {editingWord ? (
-        <div className="modal-overlay" role="presentation">
-          <form className="edit-word-modal" onSubmit={updateWord} noValidate role="dialog" aria-modal="true" aria-labelledby="edit-word-title">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h2 id="edit-word-title" className="app-heading text-lg font-bold">{t("common.edit")}</h2>
-                <p className="app-subtle truncate text-xs">{editingWord.targetText}</p>
-              </div>
-              <button className="app-button app-button-secondary app-icon-button" type="button" onClick={closeEditModal} aria-label={t("common.cancel")} data-tooltip={t("common.cancel")}>
-                <X size={17} />
-              </button>
-            </div>
+        <Modal title={t("common.edit")} onClose={closeEditModal}>
+          <form className="grid gap-3" onSubmit={updateWord} noValidate>
             <Label
               text={
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1.5">
                   <FlagIcon code={setup.targetLanguage} />
                   {t("library.targetText")}
                 </span>
@@ -1820,18 +2050,19 @@ function LibraryView({
                 value={editForm.targetText}
                 onChange={(event) => setEditForm({ ...editForm, targetText: event.target.value })}
                 placeholder={t("library.targetPlaceholder")}
+                lang={setup.targetLanguage}
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
                 aria-invalid={editTargetMissing}
-                autoFocus
+                data-autofocus
               />
               {editTargetMissing ? <span className="app-warning-text text-xs">{t("library.targetRequired")}</span> : null}
               {editDuplicateWord ? <span className="app-warning-text text-xs">{t("library.duplicateInline")}</span> : null}
             </Label>
             <Label
               text={
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1.5">
                   <FlagIcon code={setup.baseLanguage} />
                   {t("common.translations")}
                 </span>
@@ -1842,6 +2073,7 @@ function LibraryView({
                 value={editForm.translations}
                 onChange={(event) => setEditForm({ ...editForm, translations: event.target.value })}
                 placeholder={t("library.translationHint")}
+                lang={setup.baseLanguage}
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
@@ -1850,15 +2082,15 @@ function LibraryView({
               {editTranslationsMissing ? <span className="app-warning-text text-xs">{t("library.translationsRequired")}</span> : null}
             </Label>
             <div className="grid gap-3 sm:grid-cols-[14rem_minmax(0,1fr)]">
-            <AppSelect
-              label={t("library.primaryDeck")}
-              value={editForm.deckId}
-              options={(decks.filter((deck) => editDeckIds.includes(deck.id)).length > 0
-                ? decks.filter((deck) => editDeckIds.includes(deck.id))
-                : decks
-              ).map((deck) => ({ value: deck.id, label: deck.name }))}
-              onChange={(deckId) => setEditForm({ ...editForm, deckId })}
-            />
+              <AppSelect
+                label={t("library.primaryDeck")}
+                value={editForm.deckId}
+                options={(decks.filter((deck) => editDeckIds.includes(deck.id)).length > 0
+                  ? decks.filter((deck) => editDeckIds.includes(deck.id))
+                  : decks
+                ).map((deck) => ({ value: deck.id, label: deck.name }))}
+                onChange={(deckId) => setEditForm({ ...editForm, deckId })}
+              />
               <Label text={`${t("common.notes")} (${t("common.optional")})`}>
                 <textarea
                   className="app-input min-h-20"
@@ -1869,10 +2101,7 @@ function LibraryView({
               </Label>
             </div>
             <div className="app-subpanel grid gap-2 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="app-heading text-sm font-semibold">{t("library.deckAssignments")}</h3>
-                <span className="app-chip">{editDeckIds.length} {t("common.deck")}</span>
-              </div>
+              <h3 className="app-heading text-sm font-semibold">{t("library.deckAssignments")}</h3>
               <div className="grid gap-1">
                 {decks.map((deck) => {
                   const checked = editDeckIds.includes(deck.id);
@@ -1896,7 +2125,19 @@ function LibraryView({
                 })}
               </div>
             </div>
-            <div className="flex flex-wrap justify-end gap-2">
+            <div className="app-divider flex flex-wrap items-center justify-end gap-2 border-t pt-3">
+              <button
+                className="app-button app-button-ghost app-text-danger mr-auto"
+                type="button"
+                onClick={() => {
+                  const word = editingWord;
+                  closeEditModal();
+                  void deleteWord(word);
+                }}
+              >
+                <Trash2 size={17} />
+                {t("common.delete")}
+              </button>
               <button className="app-button app-button-ghost" type="button" onClick={closeEditModal}>
                 {t("common.cancel")}
               </button>
@@ -1905,124 +2146,89 @@ function LibraryView({
               </button>
             </div>
           </form>
-        </div>
+        </Modal>
       ) : null}
 
-      <div className="app-panel grid gap-3 p-4">
-        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-          <Label text={t("common.search")}>
-            <input
-              className="app-input"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t("library.searchPlaceholder")}
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-          </Label>
-          <button className="app-button app-button-secondary" type="button" onClick={() => setShowFilters((visible) => !visible)} data-tooltip={t("library.filters")}>
-            <Search size={16} />
-            {t("library.filters")}
-          </button>
+      <div className="library-tools">
+        <label className="search-field">
+          <Search size={19} aria-hidden="true" />
+          <span className="sr-only">{t("common.search")}</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("library.searchPlaceholder")}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+          />
+        </label>
+        <div className="filter-chips" role="group" aria-label={t("library.filters")}>
+          {(["all", "due", "new", "learned"] as const).map((value) => (
+            <button
+              key={value}
+              className="filter-chip"
+              type="button"
+              aria-pressed={statusFilter === value}
+              onClick={() => setStatusFilter(value)}
+            >
+              {value === "all" ? t("common.all") : t(`common.${value}`)}
+              <span className="filter-chip-count">{statusCounts[value]}</span>
+            </button>
+          ))}
+          {decks.length > 1 ? <span className="filter-chips-divider" aria-hidden="true" /> : null}
+          {decks.length > 1 ? decks.map((deck) => (
+            <button
+              key={deck.id}
+              className="filter-chip"
+              type="button"
+              aria-pressed={deckFilter === deck.id}
+              onClick={() => setDeckFilter(deckFilter === deck.id ? "all" : deck.id)}
+            >
+              {deck.name}
+            </button>
+          )) : null}
         </div>
-        {showFilters ? (
-          <div className="app-divider app-expand grid gap-3 border-t pt-3 md:grid-cols-2">
-          <AppSelect
-            label={t("common.deck")}
-            value={deckFilter}
-            options={[
-              { value: "all", label: t("common.all") },
-              ...decks.map((deck) => ({ value: deck.id, label: deck.name }))
-            ]}
-            onChange={setDeckFilter}
-          />
-          <AppSelect
-            label={t("library.reviewStatus")}
-            value={statusFilter}
-            options={[
-              { value: "all", label: t("common.all") },
-              { value: "due", label: t("common.due") },
-              { value: "new", label: t("common.new") },
-              { value: "learned", label: t("common.learned") }
-            ]}
-            onChange={(value) => setStatusFilter(value as ReviewStatus)}
-          />
-          </div>
-        ) : null}
       </div>
 
-      <div className="app-panel overflow-hidden">
-        <div className="app-divider flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2.5">
-          <div className="min-w-0">
-            <div className="app-muted text-sm font-semibold">
-              {filteredWords.length} / {words.length} {t("common.word")}
-            </div>
-            {filteredWords.length > 0 ? (
-              <div className="app-subtle text-xs">
-                {wordPageStart}-{wordPageEnd} · {t("library.page", { page: safeWordPage, pages: wordPageCount })}
-              </div>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="app-subtle flex items-center gap-2 text-xs font-semibold">
-              <span className="sr-only">{t("library.pageSize")}</span>
-              <div className="w-20">
-              <AppSelect
-                compact
-                value={String(wordsPerPage)}
-                ariaLabel={t("library.pageSize")}
-                tooltip={t("library.pageSizeHint")}
-                options={libraryPageSizeOptions.map((pageSize) => ({
-                  value: String(pageSize),
-                  label: String(pageSize)
-                }))}
-                onChange={(value) => setWordsPerPage(Number(value))}
-              />
-              </div>
-            </div>
-            {wordPager}
-          </div>
-        </div>
-        {filteredWords.length === 0 ? (
-          <div className="app-muted p-4">{t("library.noWords")}</div>
-        ) : null}
-        {pagedWords.length > 0 ? (
-          <div className="library-card-grid">
-            {pagedWords.map((word) => (
-              <article key={word.id} className="library-word-card">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="app-subtle text-[0.64rem] font-semibold uppercase tracking-wide">{languageOptionLabel(setup.targetLanguage, profile.uiLanguage)}</p>
-                    <h3 className="app-heading mt-0.5 text-base font-bold leading-snug">{word.targetText}</h3>
-                    <p className="app-muted mt-0.5 text-xs font-semibold leading-snug">{word.translations.join(" / ")}</p>
-                  </div>
-                  <div className="flex shrink-0 gap-1">
-                    <button className="app-button app-button-secondary app-icon-button" onClick={() => editWord(word)} aria-label={t("common.edit")} data-tooltip={t("common.edit")}>
-                      <Edit2 size={17} />
-                    </button>
-                    <button className="app-button app-button-danger app-icon-button" onClick={() => deleteWord(word)} aria-label={t("common.delete")} data-tooltip={t("common.delete")}>
-                      <Trash2 size={17} />
-                    </button>
-                  </div>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {wordDeckIds(word).map((deckId) => (
-                    <span key={deckId} className="app-chip">{decks.find((deck) => deck.id === deckId)?.name ?? t("common.deck")}</span>
-                  ))}
-                  <span className="app-chip">{formatLastReviewed(cardByWord.get(word.id), t("library.lastReviewed"), profile.uiLanguage)}</span>
-                </div>
-                {word.notes ? <p className="app-subtle mt-1.5 text-xs leading-relaxed">{word.notes}</p> : null}
-              </article>
-            ))}
-          </div>
-        ) : null}
-        {wordPageCount > 1 ? (
-          <div className="app-divider flex items-center justify-end gap-2 border-t px-3 py-2.5">
-            {wordPager}
-          </div>
-        ) : null}
-      </div>
+      {filteredWords.length === 0 ? (
+        <p className="app-surface-card app-muted p-4">{t("library.noWords")}</p>
+      ) : null}
+      {wordGroups.map((group) => (
+        <section key={group.key} className="grid gap-2" aria-labelledby={`library-group-${group.key}`}>
+          <h2 id={`library-group-${group.key}`} className="section-label">{group.label}</h2>
+          <ul className="word-list">
+            {group.words.map((word) => {
+              const progress = wordProgress.get(word.id);
+              const deckNames = wordDeckIds(word).map((deckId) => decks.find((deck) => deck.id === deckId)?.name).filter(Boolean).join(", ");
+              const strength = progress?.strength ?? 0;
+              return (
+                <li key={word.id}>
+                  <button className="word-row" type="button" onClick={() => editWord(word)} aria-label={`${word.targetText}. ${t("common.edit")}`}>
+                    <span className="min-w-0 flex-1">
+                      <span className="word-row-target" lang={setup.targetLanguage}>{word.targetText}</span>
+                      <span className="word-row-meta">
+                        <span lang={setup.baseLanguage}>{word.translations.join(" / ")}</span>
+                        {deckNames ? ` · ${deckNames}` : ""}
+                      </span>
+                    </span>
+                    {progress?.due ? <span className="due-pill">{t("common.due")}</span> : null}
+                    {progress?.isNew ? <span className="new-pill">{t("common.new")}</span> : null}
+                    <span className="strength-meter" role="img" aria-label={t("ui.strength", { level: strength })}>
+                      {[1, 2, 3].map((level) => <span key={level} className={level <= strength ? "strength-on" : undefined} />)}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+      {filteredWords.length > visibleWords.length ? (
+        <button className="app-button app-button-secondary app-button-large justify-self-center" type="button" onClick={() => setVisibleCount((count) => count + libraryPageSize)}>
+          {t("ui.showMore", { count: filteredWords.length - visibleWords.length })}
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -2032,6 +2238,8 @@ function DecksView({
   setup,
   decks,
   words,
+  cards,
+  onStudyDeck,
   deckSort,
   onSortChange,
   onRefresh,
@@ -2041,6 +2249,8 @@ function DecksView({
   setup: LearningSetup;
   decks: Deck[];
   words: WordEntry[];
+  cards: CardState[];
+  onStudyDeck: (deckId: string) => void;
   deckSort: DeckSort;
   onSortChange: (sort: DeckSort) => void;
   onRefresh: (nextActiveId?: string, showLoading?: boolean) => Promise<void>;
@@ -2048,6 +2258,39 @@ function DecksView({
 }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const [openMenuDeckId, setOpenMenuDeckId] = useState<string | null>(null);
+  const defaultDeckId = findDefaultDeck(decks, setup.baseLanguage)?.id;
+  const deckStats = useMemo(() => {
+    const now = new Date();
+    const cardsByWord = groupCardsByWord(cards);
+    return new Map(decks.map((deck) => {
+      const deckWords = words.filter((word) => wordDeckIds(word).includes(deck.id));
+      const strengths = deckWords.map((word) => wordStrength(cardsByWord.get(word.id)));
+      return [deck.id, {
+        words: deckWords.length,
+        learned: strengths.filter((strength) => strength >= 2).length,
+        learning: strengths.filter((strength) => strength === 1).length,
+        fresh: strengths.filter((strength) => strength === 0).length,
+        due: deckWords.reduce((total, word) =>
+          total + (cardsByWord.get(word.id) ?? []).filter((card) => new Date(card.due) <= now).length, 0)
+      }];
+    }));
+  }, [cards, decks, words]);
+
+  useEffect(() => {
+    if (!openMenuDeckId) return;
+    const close = (event: PointerEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent ? event.key === "Escape" : !(event.target as HTMLElement).closest(".deck-menu")) {
+        setOpenMenuDeckId(null);
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [openMenuDeckId]);
   const [deckName, setDeckName] = useState("");
   const [createDeckOpen, setCreateDeckOpen] = useState(false);
   const [creatingDeck, setCreatingDeck] = useState(false);
@@ -2189,9 +2432,12 @@ function DecksView({
 
   return (
     <section className="grid gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <ViewTitle title={t("decks.title")} />
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <header className="view-header">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="app-display text-3xl">{t("decks.title")}</h1>
+          <span className="app-muted whitespace-nowrap text-sm font-semibold">{t("ui.deckCount", { count: decks.length })}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           <div className="w-36">
             <AppSelect
               value={deckSort}
@@ -2202,12 +2448,12 @@ function DecksView({
               onChange={(value) => onSortChange(value as DeckSort)}
             />
           </div>
-          <button className="app-button app-button-primary app-button-compact" type="button" aria-haspopup="dialog" onClick={() => setCreateDeckOpen(true)}>
-            <Plus size={17} />
-            {t("decks.createDeck")}
+          <button className="app-button app-button-dark" type="button" aria-haspopup="dialog" onClick={() => setCreateDeckOpen(true)}>
+            <Plus size={17} strokeWidth={2.4} />
+            {t("ui.newDeck")}
           </button>
         </div>
-      </div>
+      </header>
       {renamingDeck ? (
         <RenameModal
           title={t("common.rename")}
@@ -2286,27 +2532,90 @@ function DecksView({
         </Modal>
       ) : null}
 
-      <div className="grid gap-3">
-        <div className="grid gap-3">
-          {decks.map((deck) => (
-            <article key={deck.id} className="app-panel px-3 py-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="app-heading truncate font-semibold">{deck.name}</h3>
-                  <p className="app-muted text-sm">{words.filter((word) => wordDeckIds(word).includes(deck.id)).length} {t("common.word")}</p>
+      <div className="deck-card-grid">
+        {decks.map((deck, index) => {
+          const stats = deckStats.get(deck.id) ?? { words: 0, learned: 0, learning: 0, fresh: 0, due: 0 };
+          const menuOpen = openMenuDeckId === deck.id;
+          return (
+            <article key={deck.id} className="deck-card" aria-labelledby={`deck-${deck.id}-name`}>
+              <div className="flex items-center gap-3">
+                <span className={`deck-badge deck-badge-large deck-tone-${index % deckToneCount}`} aria-hidden="true">
+                  {deck.name.charAt(0).toLocaleUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h2 id={`deck-${deck.id}-name`} className="app-display truncate text-lg">{deck.name}</h2>
+                  <p className="app-muted text-sm">
+                    {t("ui.wordCount", { count: stats.words })}
+                    {deck.id === defaultDeckId ? ` · ${t("ui.defaultDeck")}` : ""}
+                  </p>
                 </div>
-                <div className="flex shrink-0 gap-1">
-                  <button className="app-button app-button-secondary app-icon-button" onClick={() => renameDeck(deck)} aria-label={t("common.rename")} data-tooltip={t("common.rename")}>
-                    <Edit2 size={17} />
+                <div className="deck-menu">
+                  <button
+                    className="study-round-button"
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                    aria-label={t("ui.deckActions", { name: deck.name })}
+                    onClick={() => setOpenMenuDeckId(menuOpen ? null : deck.id)}
+                  >
+                    <MoreHorizontal size={20} />
                   </button>
-                  <button className="app-button app-button-danger app-icon-button" onClick={() => deleteDeck(deck)} aria-label={t("common.delete")} data-tooltip={t("common.delete")}>
-                    <Trash2 size={17} />
-                  </button>
+                  {menuOpen ? (
+                    <div className="deck-menu-popup" role="menu">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setOpenMenuDeckId(null);
+                          renameDeck(deck);
+                        }}
+                      >
+                        <Edit2 size={17} />
+                        {t("common.rename")}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="app-text-danger"
+                        onClick={() => {
+                          setOpenMenuDeckId(null);
+                          void deleteDeck(deck);
+                        }}
+                      >
+                        <Trash2 size={17} />
+                        {t("common.delete")}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
+              {stats.words > 0 ? (
+                <div className="grid gap-2">
+                  <div
+                    className="deck-progress"
+                    role="img"
+                    aria-label={`${t("ui.learnedCount", { count: stats.learned })}, ${t("ui.learningCount", { count: stats.learning })}, ${t("ui.newCount", { count: stats.fresh })}`}
+                  >
+                    {stats.learned ? <span className="deck-progress-learned" style={{ flexGrow: stats.learned }} /> : null}
+                    {stats.learning ? <span className="deck-progress-learning" style={{ flexGrow: stats.learning }} /> : null}
+                    {stats.fresh ? <span className="deck-progress-new" style={{ flexGrow: stats.fresh }} /> : null}
+                  </div>
+                  <div className="deck-progress-legend">
+                    <span><span className="deck-progress-dot deck-progress-learned" aria-hidden="true" />{t("ui.learnedCount", { count: stats.learned })}</span>
+                    <span><span className="deck-progress-dot deck-progress-learning" aria-hidden="true" />{t("ui.learningCount", { count: stats.learning })}</span>
+                    <span><span className="deck-progress-dot deck-progress-new" aria-hidden="true" />{t("ui.newCount", { count: stats.fresh })}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="app-muted text-sm">{t("ui.emptyDeck")}</p>
+              )}
+              <button className="deck-study-button" type="button" onClick={() => onStudyDeck(deck.id)} disabled={stats.due === 0}>
+                <span>{stats.due > 0 ? t("ui.studyDue", { count: stats.due }) : t("ui.nothingDue")}</span>
+                {stats.due > 0 ? <ArrowRight size={19} strokeWidth={2.4} aria-hidden="true" /> : null}
+              </button>
             </article>
-          ))}
-        </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -3181,6 +3490,14 @@ function RenameModal({
   );
 }
 
+/** Number of deck colour tones defined in index.css (.deck-tone-0 …). */
+const deckToneCount = 4;
+
+function initials(name: string): string {
+  const letters = name.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0).toLocaleUpperCase());
+  return letters.join("") || "?";
+}
+
 function preferredLibraryDeckId(decks: Deck[], baseLanguage: LanguageCode): string {
   return findDefaultDeck(decks, baseLanguage)?.id ?? decks[0]?.id ?? "";
 }
@@ -3241,120 +3558,6 @@ function ConnectionBadge({ online, compact = false }: { online: boolean; compact
         <span className={`h-2 w-2 rounded-full ${online ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" : "bg-rose-400"}`} aria-hidden="true" />
         {online ? t("connection.online") : t("connection.offline")}
       </span>
-    </div>
-  );
-}
-
-function ScopeSelect({
-  scope,
-  setScope,
-  decks
-}: {
-  scope: ScopeSelection;
-  setScope: (scope: ScopeSelection) => void;
-  decks: Deck[];
-}) {
-  const { t } = useTranslation();
-  const value = scope.type === "all" ? "all" : `deck:${scope.deckId}`;
-
-  return (
-    <AppSelect
-      label={t("study.scope")}
-      value={value}
-      options={[
-        { value: "all", label: t("common.all") },
-        ...decks.map((deck) => ({
-          value: `deck:${deck.id}`,
-          label: `${t("common.deck")}: ${deck.name}`
-        }))
-      ]}
-      onChange={(next) => {
-          if (next === "all") {
-            setScope({ type: "all" });
-          } else if (next.startsWith("deck:")) {
-            setScope({ type: "deck", deckId: next.slice(5) });
-          }
-        }}
-    />
-  );
-}
-
-function DirectionPicker({
-  value,
-  setup,
-  onChange
-}: {
-  value: StudyDirection;
-  setup: LearningSetup;
-  onChange: (value: StudyDirection) => void;
-}) {
-  const { t } = useTranslation();
-  const options: Array<{ value: StudyDirection; label: string; flags: React.ReactNode }> = [
-    {
-      value: "target-base",
-      label: t("study.targetBase"),
-      flags: (
-        <>
-          <FlagIcon code={setup.targetLanguage} />
-          <span aria-hidden="true">→</span>
-          <FlagIcon code={setup.baseLanguage} />
-        </>
-      )
-    },
-    {
-      value: "base-target",
-      label: t("study.baseTarget"),
-      flags: (
-        <>
-          <FlagIcon code={setup.baseLanguage} />
-          <span aria-hidden="true">→</span>
-          <FlagIcon code={setup.targetLanguage} />
-        </>
-      )
-    },
-    {
-      value: "mixed",
-      label: t("study.mixed"),
-      flags: (
-        <>
-          <FlagIcon code={setup.targetLanguage} />
-          <span aria-hidden="true">↔</span>
-          <FlagIcon code={setup.baseLanguage} />
-        </>
-      )
-    }
-  ];
-
-  return (
-    <div className="grid gap-1">
-      <span className="app-label text-sm font-semibold">{t("study.direction")}</span>
-      <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t("study.direction")}>
-        {options.map((option) => (
-          <button
-            key={option.value}
-            className={`app-button min-w-0 px-2 ${option.value === value ? "app-button-primary" : "app-button-secondary"}`}
-            type="button"
-            role="radio"
-            aria-checked={option.value === value}
-            aria-label={option.label}
-            data-tooltip={option.label}
-            onClick={() => onChange(option.value)}
-          >
-            <span className="flex items-center justify-center gap-1">{option.flags}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DueStatus({ count }: { count: number }) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="due-status" data-tooltip={t("study.dueHint")} tabIndex={0}>
-      <span className="app-subtle text-xs font-semibold uppercase tracking-wide">{t("common.due")}</span>
-      <span className="app-heading text-lg font-bold">{count}</span>
     </div>
   );
 }
@@ -3765,17 +3968,6 @@ function LearningSetupSelect({
   );
 }
 
-function currentNavLabel(view: ViewKey, t: (key: string) => string): string {
-  const labels: Record<ViewKey, string> = {
-    study: t("nav.study"),
-    library: t("nav.library"),
-    decks: t("nav.decks"),
-    settings: t("nav.settings")
-  };
-
-  return labels[view];
-}
-
 function filterWordsByScope(words: WordEntry[], scope: ScopeSelection): WordEntry[] {
   if (scope.type === "all") {
     return words;
@@ -3941,17 +4133,6 @@ function groupCardsByWord(cards: CardState[]): Map<string, CardState[]> {
     grouped.set(card.wordId, [...(grouped.get(card.wordId) ?? []), card]);
   }
   return grouped;
-}
-
-function formatLastReviewed(cards: CardState[] | undefined, label: string, locale: LanguageCode): string {
-  const reviewed = cards?.map((card) => card.lastReviewedAt).filter(Boolean) as string[] | undefined;
-  if (!reviewed || reviewed.length === 0) {
-    return `${label}: -`;
-  }
-
-  const sorted = reviewed.sort();
-  const latest = sorted[sorted.length - 1];
-  return `${label}: ${latest ? new Date(latest).toLocaleDateString(locale) : "-"}`;
 }
 
 function shuffle<T>(items: T[]): T[] {
