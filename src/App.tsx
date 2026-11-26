@@ -3,11 +3,15 @@ import {
   BookOpen,
   Camera,
   Check,
+  Cloud,
+  FileDown,
+  FileUp,
   ChevronRight,
   Download,
   Edit2,
   Gauge,
   House,
+  Languages,
   Layers,
   MoreHorizontal,
   Plus,
@@ -18,6 +22,7 @@ import {
   Moon,
   Sun,
   Trash2,
+  Upload,
   UserRound,
   Volume2,
   X
@@ -91,6 +96,8 @@ import {
   wordStrength
 } from "./lib/progress";
 import { canSpeak, speak } from "./lib/speech";
+import { useBackDismiss } from "./lib/history";
+import { trackRatingWrite, waitForPendingRatingWrites } from "./lib/pendingWrites";
 import { MobileTabBar } from "./components/MobileTabBar";
 import { cloudBackupAuthorizationStorageKey, type CloudBackupFile, createGoogleDriveBackupProvider } from "./lib/cloudBackup";
 
@@ -112,6 +119,8 @@ interface StudyCard {
 }
 
 interface SessionState {
+  /** Identifies this session, so work that finishes after it was dismissed cannot revive it. */
+  id: string;
   queue: StudyCard[];
   current?: StudyCard;
   reviewed: number;
@@ -142,6 +151,17 @@ const defaultCloudBackupFolder = "Lexora/Backups";
 const latestCloudBackupFilename = "lexora-backup-latest.json";
 const libraryPageSize = 40;
 
+const viewKeys: ViewKey[] = ["study", "library", "decks", "settings"];
+
+function isViewKey(value: unknown): value is ViewKey {
+  return typeof value === "string" && viewKeys.includes(value as ViewKey);
+}
+
+function readViewFromLocation(): ViewKey {
+  const fromHash = window.location.hash.slice(1);
+  return isViewKey(fromHash) ? fromHash : "study";
+}
+
 function readStoredTheme(): ThemeMode {
   const stored = localStorage.getItem(themeStorageKey);
   return stored === "light" || stored === "dark" ? stored : "light";
@@ -149,7 +169,7 @@ function readStoredTheme(): ThemeMode {
 
 export default function App() {
   const { t, i18n } = useTranslation();
-  const [view, setView] = useState<ViewKey>("study");
+  const [view, setView] = useState<ViewKey>(readViewFromLocation);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(() =>
     localStorage.getItem(activeProfileStorageKey)
@@ -205,6 +225,51 @@ export default function App() {
 
   useEffect(() => {
     void refreshAll();
+  }, []);
+
+  useEffect(() => {
+    // Each tab change is a history entry, so the phone's back button returns to the previous
+    // screen instead of closing the app.
+    window.history.replaceState({ ...(window.history.state ?? {}), view }, "", `#${view}`);
+    const handlePopState = (event: PopStateEvent) => {
+      const next = event.state?.view;
+      setView(isViewKey(next) ? next : readViewFromLocation());
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useBackDismiss(mobileMenuOpen, () => setMobileMenuOpen(false), "lexoraMenu");
+
+  function navigate(next: ViewKey) {
+    setMobileMenuOpen(false);
+    if (next === view) return;
+    window.history.pushState({ view: next }, "", `#${next}`);
+    setView(next);
+  }
+
+  useEffect(() => {
+    // On-screen keyboards shrink only the visual viewport on some browsers. Expose its size so
+    // bottom sheets can sit above the keyboard, and keep the focused field in view.
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const root = document.documentElement;
+    const update = () => {
+      const keyboardInset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      root.style.setProperty("--keyboard-inset", `${Math.round(keyboardInset)}px`);
+      root.style.setProperty("--visual-height", `${Math.round(viewport.height)}px`);
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && focused.matches("input, textarea") && focused.closest("dialog[open]")) {
+        focused.scrollIntoView({ block: "nearest" });
+      }
+    };
+    update();
+    viewport.addEventListener("resize", update);
+    viewport.addEventListener("scroll", update);
+    return () => {
+      viewport.removeEventListener("resize", update);
+      viewport.removeEventListener("scroll", update);
+    };
   }, []);
 
   useEffect(() => {
@@ -419,25 +484,25 @@ export default function App() {
                 icon={<House size={18} />}
                 label={t("ui.today")}
                 active={view === "study"}
-                onClick={() => setView("study")}
+                onClick={() => navigate("study")}
               />
               <NavButton
                 icon={<Search size={18} />}
                 label={t("nav.library")}
                 active={view === "library"}
-                onClick={() => setView("library")}
+                onClick={() => navigate("library")}
               />
               <NavButton
                 icon={<Layers size={18} />}
                 label={t("nav.decks")}
                 active={view === "decks"}
-                onClick={() => setView("decks")}
+                onClick={() => navigate("decks")}
               />
               <NavButton
                 icon={<Settings size={18} />}
                 label={t("nav.settings")}
                 active={view === "settings"}
-                onClick={() => setView("settings")}
+                onClick={() => navigate("settings")}
               />
             </div>
             <div className="desktop-preferences">
@@ -572,10 +637,10 @@ export default function App() {
               studyRequest={studyRequest}
               onStudyRequestHandled={() => setStudyRequest(null)}
               onOpenSwitcher={() => setMobileMenuOpen(true)}
-              onOpenDecks={() => setView("decks")}
+              onOpenDecks={() => navigate("decks")}
               onAddWords={() => {
                 setCaptureRequest("word");
-                setView("library");
+                navigate("library");
               }}
               onRefresh={refreshAll}
             />
@@ -603,7 +668,7 @@ export default function App() {
               cards={cards}
               onStudyDeck={(deckId) => {
                 setStudyRequest({ type: "deck", deckId });
-                setView("study");
+                navigate("study");
               }}
               deckSort={deckSort}
               onSortChange={(sort) => {
@@ -625,6 +690,17 @@ export default function App() {
               usage={usage}
               cloudProvider={googleDriveProvider}
               online={isOnline}
+              theme={theme}
+              onThemeChange={setTheme}
+              onUiLanguageChange={updateActiveUiLanguage}
+              onSwitchProfile={(profileId) => {
+                setActiveProfileId(profileId);
+                void refreshAll(profileId);
+              }}
+              onSwitchSetup={async (setupId) => {
+                await db.profiles.update(activeProfile.id, { activeLearningSetupId: setupId, updatedAt: nowIso() });
+                await refreshAll(activeProfile.id);
+              }}
               onRefresh={refreshAll}
               onStatus={setStatus}
             />
@@ -634,13 +710,11 @@ export default function App() {
       <MobileTabBar
         active={view}
         onSelect={(next) => {
-          setMobileMenuOpen(false);
-          setView(next);
+          navigate(next);
         }}
         onAdd={() => {
-          setMobileMenuOpen(false);
           setCaptureRequest("word");
-          setView("library");
+          navigate("library");
         }}
       />
     </div>
@@ -821,8 +895,25 @@ function StudyView({
   const [direction, setDirection] = useState<StudyDirection>("mixed");
   const [session, setSession] = useState<SessionState | null>(null);
   const [starting, setStarting] = useState(false);
+  // Back during a session or on its summary returns to Today; ratings are already saved.
+  useBackDismiss(session !== null, () => setSession(null), "lexoraSession");
+  // The session the screen shows right now, read after awaits to see if it was dismissed meanwhile.
+  const activeSessionId = useRef<string | null>(null);
+  activeSessionId.current = session?.id ?? null;
+  // The card on screen. The summary keeps the session ID but shows no card.
+  const activeCardId = useRef<string | null>(null);
+  activeCardId.current = session?.current?.card.id ?? null;
+  const [scheduleError, setScheduleError] = useState(false);
+  // The rating whose save failed. The card stays revealed; Continue retries this rating unless the
+  // user picks another one. Cleared after a successful save and when the card or session changes.
+  const [failedRating, setFailedRating] = useState<ReviewRating | null>(null);
+
+  useEffect(() => {
+    setFailedRating(null);
+  }, [session?.id, session?.current?.card.id]);
   const answerInputRef = useRef<HTMLInputElement>(null);
-  const suggestedRatingRef = useRef<HTMLButtonElement>(null);
+  const continueRef = useRef<HTMLButtonElement>(null);
+  const [ratingOpen, setRatingOpen] = useState(false);
   const advancingRef = useRef(false);
   const answerId = useId();
   const speechAvailable = canSpeak();
@@ -898,6 +989,9 @@ function StudyView({
     if (starting) return;
     setStarting(true);
     try {
+      // A rating from a session the user just left may still be saving, possibly started on another
+      // screen; read cards only after it lands, so the new queue uses the saved schedule.
+      await waitForPendingRatingWrites();
       await ensureCardsForWords(activePairWords);
       const latestCards = await db.cards.where("learningSetupId").equals(setup.id).toArray();
       const scopedWords = filterWordsByScope(activePairWords, scope);
@@ -912,7 +1006,10 @@ function StudyView({
           .map((card) => ({ card, word: wordMap.get(card.wordId)! }))
       );
       const [current, ...rest] = queue;
+      setScheduleError(false);
+      setFailedRating(null);
       setSession({
+        id: createId("session"),
         queue: rest,
         current,
         reviewed: 0,
@@ -952,17 +1049,60 @@ function StudyView({
 
     advancingRef.current = true;
     try {
-      const scheduled = scheduleReview(session.current.card, rating);
-      await db.cards.update(session.current.card.id, scheduled);
+      const result = scheduleWithSavedHistory(session.current.card, rating);
+      if (!result.ok) {
+        // Nothing is written, so the card keeps its saved history.
+        setScheduleError(true);
+        return;
+      }
+      setScheduleError(false);
+      const scheduled = result.scheduled;
+      const sessionId = session.id;
+      const cardId = session.current.card.id;
+      try {
+        await trackRatingWrite(db.cards.update(cardId, scheduled));
+      } catch (error) {
+        // Nothing was saved. Keep the card revealed so Continue retries the same rating.
+        console.error("Could not save rating for card", cardId, error);
+        if (activeSessionId.current === sessionId && activeCardId.current === cardId) setFailedRating(rating);
+        return;
+      }
+      setFailedRating(null);
 
       const wasCorrect = session.match === "correct" || (session.match === "close" && session.closeAccepted);
       const rated: StudyCard = { ...session.current, card: { ...session.current.card, ...scheduled } };
-      const nextQueue = rating === "again" ? [...session.queue, rated] : [...session.queue];
       const again = rating === "again" && !session.again.includes(rated.card.id)
         ? [...session.again, rated.card.id]
         : session.again;
+
+      if (activeSessionId.current !== sessionId) {
+        // The session was left (for example with Back) while the rating was being saved.
+        // The rating is stored; only refresh the counts and stay where the user went.
+        await onRefresh();
+        return;
+      }
+
+      if (activeCardId.current !== cardId) {
+        // Same session, but it moved on while saving: End session opened the summary. Count the
+        // rating there and keep the summary open instead of advancing the queue.
+        setSession((latest) => latest && latest.id === sessionId && !latest.current
+          ? {
+              ...latest,
+              reviewed: latest.reviewed + 1,
+              correct: latest.correct + (wasCorrect ? 1 : 0),
+              again: rating === "again" && !latest.again.includes(cardId) ? [...latest.again, cardId] : latest.again,
+              latest: { ...latest.latest, [cardId]: { item: rated, rating } }
+            }
+          : latest);
+        await onRefresh();
+        return;
+      }
+
+      const nextQueue = rating === "again" ? [...session.queue, rated] : [...session.queue];
       const [nextCurrent, ...rest] = nextQueue;
+      setRatingOpen(false);
       setSession({
+        id: session.id,
         queue: rest,
         current: nextCurrent,
         reviewed: session.reviewed + 1,
@@ -979,6 +1119,22 @@ function StudyView({
     } finally {
       advancingRef.current = false;
     }
+  }
+
+  /** Moves past a card that could not be scheduled, without saving anything for it. */
+  function skipCurrent() {
+    if (!session?.current) return;
+    const [nextCurrent, ...rest] = session.queue;
+    setScheduleError(false);
+    setFailedRating(null);
+    setRatingOpen(false);
+    if (!nextCurrent && session.reviewed === 0) {
+      // Nothing was reviewed and the skipped card is still due: go back to Today rather than
+      // showing a "nothing due" screen.
+      setSession(null);
+      return;
+    }
+    setSession({ ...session, queue: rest, current: nextCurrent, answer: "", revealed: false, closeAccepted: false, selectedRating: undefined });
   }
 
   function endSession() {
@@ -1000,14 +1156,27 @@ function StudyView({
 
   useEffect(() => {
     if (session?.revealed && !isCoarsePointer()) {
-      suggestedRatingRef.current?.focus();
+      continueRef.current?.focus();
     }
   }, [session?.revealed, session?.current?.card.id]);
 
   useEffect(() => {
-    if (session?.current && !session.revealed && !isCoarsePointer()) {
-      answerInputRef.current?.focus();
+    // Focus on phones too: answers are typed for every card, so keep the keyboard flowing.
+    if (session?.current && !session.revealed) {
+      answerInputRef.current?.focus({ preventScroll: true });
     }
+  }, [session?.current?.card.id, session?.revealed]);
+
+  useEffect(() => {
+    // When the on-screen keyboard opens, keep the prompt at the top in view rather than
+    // letting the browser scroll it away to reveal the answer field.
+    const viewport = window.visualViewport;
+    if (!session?.current || session.revealed || !viewport) return;
+    const keepPromptVisible = () => {
+      if (document.activeElement === answerInputRef.current) window.scrollTo({ top: 0 });
+    };
+    viewport.addEventListener("resize", keepPromptVisible);
+    return () => viewport.removeEventListener("resize", keepPromptVisible);
   }, [session?.current?.card.id, session?.revealed]);
 
   useEffect(() => {
@@ -1034,13 +1203,13 @@ function StudyView({
 
       if (event.key === "Enter" && !target?.closest("button, a")) {
         event.preventDefault();
-        void rateCurrent(session.selectedRating ?? "again");
+        void rateCurrent(failedRating ?? session.selectedRating ?? "again");
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [session]);
+  }, [session, failedRating]);
 
   if (session && !session.current) {
     if (session.reviewed === 0) {
@@ -1133,14 +1302,18 @@ function StudyView({
       : session.match === "close"
         ? "close"
         : "wrong";
-    const suggested = session.selectedRating ?? "again";
+    // After a failed save, Continue retries what the user actually chose.
+    const suggested = failedRating ?? session.selectedRating ?? "again";
     const previewTime = new Date();
     const previews = session.revealed
       ? ratings.map((rating) => {
-          const due = scheduleReview(session.current!.card, rating, previewTime).due;
+          // Previews run on every render; the failure is reported once, when the user rates.
+          const preview = scheduleWithSavedHistory(session.current!.card, rating, previewTime, { logFailure: false });
+          const due = preview.ok ? preview.scheduled.due : undefined;
           return { rating, interval: due ? formatInterval(new Date(due).getTime() - previewTime.getTime(), locale) : "" };
         })
       : [];
+    const suggestedInterval = previews.find((preview) => preview.rating === suggested)?.interval;
     return (
       <section className="study-session" aria-label={t("study.title")}>
         <div className="study-session-top">
@@ -1280,29 +1453,52 @@ function StudyView({
                 </label>
               ) : null}
             </div>
-            <section className="rating-sheet" aria-labelledby="rating-heading">
-              <div className="flex items-baseline justify-between gap-3">
-                <h2 id="rating-heading" className="app-display text-lg">{t("ui.rateTitle")}</h2>
-                <span className="app-muted text-xs">{t("ui.nextReview")}</span>
-              </div>
-              <div className="rating-grid">
-                {previews.map(({ rating, interval }, index) => (
-                  <button
-                    key={rating}
-                    ref={rating === suggested ? suggestedRatingRef : undefined}
-                    className={`rating-button rating-button-${rating} ${rating === suggested ? "rating-button-suggested" : ""}`}
-                    type="button"
-                    onClick={() => void rateCurrent(rating)}
-                    aria-keyshortcuts={String(index + 1)}
-                    data-tooltip={t(`study.${rating}Hint`)}
-                  >
-                    <span className="rating-button-name">{t(`study.${rating}`)}</span>
-                    <span className="rating-button-interval">{interval}</span>
+            <div className="study-continue">
+              {failedRating ? (
+                <div className="study-error" role="alert">
+                  <p>{t("ui.saveRatingError")}</p>
+                </div>
+              ) : null}
+              {scheduleError ? (
+                <div className="study-error" role="alert">
+                  <p>{t("ui.scheduleError")}</p>
+                  <button className="app-button app-button-secondary" type="button" onClick={skipCurrent}>
+                    {t("ui.skipCard")}
                   </button>
-                ))}
-              </div>
-              <p className="app-muted text-center text-sm">{t("ui.ratingHint", { rating: t(`study.${suggested}`) })}</p>
-            </section>
+                </div>
+              ) : null}
+              {suggestedInterval ? (
+                <p className="app-muted text-center text-sm">{t("ui.nextReviewIn", { time: suggestedInterval })}</p>
+              ) : null}
+              {ratingOpen ? (
+                <div className="rating-grid" role="group" aria-label={t("ui.changeRating")}>
+                  {previews.map(({ rating, interval }, index) => (
+                    <button
+                      key={rating}
+                      className={`rating-button rating-button-${rating} ${rating === suggested ? "rating-button-suggested" : ""}`}
+                      type="button"
+                      onClick={() => void rateCurrent(rating)}
+                      aria-keyshortcuts={String(index + 1)}
+                    >
+                      <span className="rating-button-name">{t(`study.${rating}`)}</span>
+                      <span className="rating-button-interval">{interval}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <button
+                ref={continueRef}
+                className="app-button app-button-primary app-button-large"
+                type="button"
+                onClick={() => void rateCurrent(suggested)}
+              >
+                {t("ui.continue")}
+                <ArrowRight size={19} strokeWidth={2.4} />
+              </button>
+              <button className="text-button justify-self-center" type="button" aria-expanded={ratingOpen} onClick={() => setRatingOpen((open) => !open)}>
+                {t("ui.changeRating")}
+              </button>
+            </div>
           </>
         )}
       </section>
@@ -1310,6 +1506,12 @@ function StudyView({
   }
 
   const maxForecast = Math.max(1, ...forecast.map((day) => day.count));
+  // Today shows a short list; the Decks tab has all of them.
+  const topDecks = deckStats
+    .map((stats, tone) => ({ ...stats, tone }))
+    .filter((stats) => stats.words > 0)
+    .sort((left, right) => right.due - left.due)
+    .slice(0, todayDeckLimit);
   const weekday = new Intl.DateTimeFormat(locale, { weekday: "short" });
   const minutes = Math.max(1, Math.round((dueCount * secondsPerCard) / 60));
   const directionOptions: Array<{ value: StudyDirection; label: string; title: string }> = [
@@ -1376,7 +1578,7 @@ function StudyView({
           </section>
 
           <section className="review-card" aria-labelledby="review-heading">
-            <div className="flex items-end justify-between gap-3">
+            <div className="review-card-top">
               <div className="min-w-0">
                 <h2 id="review-heading" className="review-card-label">{t("ui.dueNow")}</h2>
                 <p className="review-card-count">{dueCount}</p>
@@ -1389,7 +1591,6 @@ function StudyView({
                     type="button"
                     aria-pressed={direction === option.value}
                     aria-label={option.title}
-                    data-tooltip={option.title}
                     onClick={() => setDirection(option.value)}
                   >
                     {option.label}
@@ -1417,7 +1618,7 @@ function StudyView({
             <button className="text-button" type="button" onClick={onOpenDecks}>{t("ui.seeAll")}</button>
           </div>
           <div className="deck-tiles">
-            {deckStats.map(({ deck, words: wordCount, due, learned }, index) => (
+            {topDecks.map(({ deck, words: wordCount, due, learned, tone: index }) => (
               <button
                 key={deck.id}
                 className="deck-tile"
@@ -2176,18 +2377,20 @@ function LibraryView({
               <span className="filter-chip-count">{statusCounts[value]}</span>
             </button>
           ))}
-          {decks.length > 1 ? <span className="filter-chips-divider" aria-hidden="true" /> : null}
-          {decks.length > 1 ? decks.map((deck) => (
-            <button
-              key={deck.id}
-              className="filter-chip"
-              type="button"
-              aria-pressed={deckFilter === deck.id}
-              onClick={() => setDeckFilter(deckFilter === deck.id ? "all" : deck.id)}
-            >
-              {deck.name}
-            </button>
-          )) : null}
+          {decks.length > 1 ? (
+            <div className="filter-deck">
+              <AppSelect
+                value={deckFilter}
+                ariaLabel={t("common.deck")}
+                compact
+                options={[
+                  { value: "all", label: t("ui.allDecks") },
+                  ...decks.map((deck) => ({ value: deck.id, label: deck.name }))
+                ]}
+                onChange={setDeckFilter}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -2631,6 +2834,11 @@ function SettingsView({
   usage,
   cloudProvider,
   online,
+  theme,
+  onThemeChange,
+  onUiLanguageChange,
+  onSwitchProfile,
+  onSwitchSetup,
   onRefresh,
   onStatus
 }: {
@@ -2643,11 +2851,35 @@ function SettingsView({
   usage: TranslationUsage | null;
   cloudProvider: ReturnType<typeof createGoogleDriveBackupProvider>;
   online: boolean;
+  theme: ThemeMode;
+  onThemeChange: (value: ThemeMode) => void;
+  onUiLanguageChange: (value: LanguageCode) => void | Promise<void>;
+  onSwitchProfile: (profileId: string) => void;
+  onSwitchSetup: (setupId: string) => void | Promise<void>;
   onRefresh: (nextActiveId?: string, showLoading?: boolean) => Promise<void>;
   onStatus: (message: string) => void;
 }) {
   const { t, i18n } = useTranslation();
   const confirm = useConfirm();
+  const [creatingProfile, setCreatingProfile] = useState(false);
+  const [creatingSetup, setCreatingSetup] = useState(false);
+  const [openSetupMenuId, setOpenSetupMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openSetupMenuId) return;
+    const close = (event: PointerEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent ? event.key === "Escape" : !(event.target as HTMLElement).closest(".deck-menu")) {
+        setOpenSetupMenuId(null);
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [openSetupMenuId]);
+
   const backupMergeInputRef = useRef<HTMLInputElement>(null);
   const backupReplaceInputRef = useRef<HTMLInputElement>(null);
   const csvImportInputRef = useRef<HTMLInputElement>(null);
@@ -3092,9 +3324,23 @@ function SettingsView({
     }
   }
 
+  const translationsUsed = usage?.count ?? 0;
+  const translationPercent = Math.min(100, Math.round((translationsUsed / myMemoryDailyLimit) * 100));
+  const editingSetup = learningSetups.find((setup) => setup.id === editingSetupLanguagesId) ?? null;
+  const languageOptions = languageCodes.map((code) => ({
+    value: code,
+    label: (
+      <span className="flex min-w-0 items-center gap-2">
+        <FlagIcon code={code} />
+        <span className="truncate">{languageOptionLabel(code, i18n.language)}</span>
+      </span>
+    )
+  }));
+
   return (
-    <section className="grid min-w-0 gap-4">
-      <ViewTitle title={t("settings.title")} />
+    <section className="settings grid min-w-0 gap-6">
+      <h1 className="app-display text-3xl">{t("settings.title")}</h1>
+
       {renamingSetup ? (
         <RenameModal
           title={t("common.rename")}
@@ -3107,319 +3353,407 @@ function SettingsView({
           onSubmit={submitSetupRename}
         />
       ) : null}
-      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        <form className="app-panel grid min-w-0 gap-3 p-4" onSubmit={createAdditionalProfile}>
-          <h2 className="app-heading text-base font-semibold">{t("profile.createAnother")}</h2>
-          <Label text={t("profile.name")}>
-            <input className="app-input" value={newProfileName} onChange={(event) => setNewProfileName(event.target.value)} placeholder={t("profile.namePlaceholder")} />
-          </Label>
-          <p className="app-muted text-sm">{t("profile.count", { count: String(profiles.length) })}</p>
-          <button className="app-button app-button-primary w-fit" type="submit" data-tooltip={t("profile.createAnother")}>
-            <Plus size={18} />
-            {t("common.create")}
-          </button>
-        </form>
-      </div>
 
-      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        <form className="app-panel grid min-w-0 gap-3 p-4" onSubmit={createSetup}>
-          <h2 className="app-heading text-base font-semibold">{t("setup.create")}</h2>
-          <Label text={t("setup.name")}>
-            <input
-              className="app-input"
-              value={setupName}
-              onChange={(event) => setSetupName(event.target.value)}
-              placeholder={setupNamePlaceholder(setupBaseLanguage, setupTargetLanguage, i18n.language, t)}
-            />
-          </Label>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <LanguageSelect
-              label={t("setup.baseLanguage")}
-              value={setupBaseLanguage}
-              exclude={[setupTargetLanguage]}
-              onChange={(value) => {
-                setSetupBaseLanguage(value);
-                if (setupTargetLanguage === value) {
-                  setSetupTargetLanguage(firstAvailableLanguage(value));
-                }
-              }}
-            />
-            <LanguageSelect
+      {creatingProfile ? (
+        <Modal title={t("ui.newProfile")} onClose={() => setCreatingProfile(false)}>
+          <form
+            className="grid gap-4"
+            onSubmit={async (event) => {
+              await createAdditionalProfile(event);
+              setCreatingProfile(false);
+            }}
+          >
+            <Label text={t("profile.name")}>
+              <input className="app-input" value={newProfileName} onChange={(event) => setNewProfileName(event.target.value)} placeholder={t("profile.namePlaceholder")} data-autofocus required />
+            </Label>
+            <p className="app-muted text-sm">{t("profile.count", { count: String(profiles.length) })}</p>
+            <button className="app-button app-button-primary app-button-large" type="submit" disabled={!newProfileName.trim()}>
+              <Plus size={18} />
+              {t("common.create")}
+            </button>
+          </form>
+        </Modal>
+      ) : null}
+
+      {creatingSetup ? (
+        <Modal title={t("ui.newLanguagePair")} onClose={() => setCreatingSetup(false)}>
+          <form
+            className="grid gap-4"
+            onSubmit={async (event) => {
+              await createSetup(event);
+              setCreatingSetup(false);
+            }}
+          >
+            <AppSelect
               label={t("setup.targetLanguage")}
               value={setupTargetLanguage}
-              exclude={[setupBaseLanguage]}
-              onChange={(value) => {
-                setSetupTargetLanguage(value);
-                if (setupBaseLanguage === value) {
-                  setSetupBaseLanguage(firstAvailableLanguage(value));
-                }
-              }}
+              options={languageOptions.filter((option) => option.value !== setupBaseLanguage)}
+              onChange={(value) => setSetupTargetLanguage(value as LanguageCode)}
             />
-          </div>
-          <button className="app-button app-button-primary w-fit" type="submit" data-tooltip={t("setup.create")}>
-            <Plus size={18} />
-            {t("common.create")}
-          </button>
-        </form>
-
-        <div className="app-panel grid min-w-0 gap-3 p-4">
-          <h2 className="app-heading text-base font-semibold">{t("setup.title")}</h2>
-          {learningSetups.map((setup) => (
-            <div key={setup.id} className="app-subpanel grid min-w-0 gap-3 p-3">
-              <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-                <div className="min-w-0">
-                  <p className="flex items-center gap-2 font-semibold">
-                    <FlagIcon code={setup.targetLanguage} />
-                    <span className="truncate">{learningSetupDisplayName(setup, i18n.language)}</span>
-                  </p>
-                  <p className="app-muted mt-1 flex min-w-0 items-center gap-1 text-sm">
-                    <span>{t("setup.baseShort")}:</span>
-                    <FlagIcon code={setup.baseLanguage} />
-                    <span className="truncate">{languageOptionLabel(setup.baseLanguage, i18n.language)}</span>
-                  </p>
-                </div>
-                <div className="setup-actions">
-                  <button className="app-button app-button-secondary app-icon-button" onClick={() => renameSetup(setup)} aria-label={t("common.rename")} data-tooltip={t("common.rename")}>
-                    <Edit2 size={17} />
-                  </button>
-                  <button
-                    className="app-button app-button-secondary"
-                    onClick={() => beginLanguageEdit(setup)}
-                    disabled={(setupWordCounts[setup.id] ?? 0) > 0}
-                    data-tooltip={(setupWordCounts[setup.id] ?? 0) > 0 ? t("setup.languagesLocked") : t("setup.editLanguages")}
-                  >
-                    {t("setup.editLanguages")}
-                  </button>
-                  <button
-                    className="app-button app-button-danger app-icon-button"
-                    onClick={() => removeSetup(setup)}
-                    aria-label={t("common.delete")}
-                    disabled={learningSetups.length <= 1}
-                    data-tooltip={learningSetups.length <= 1 ? t("setup.keepOne") : t("setup.delete")}
-                  >
-                    <Trash2 size={17} />
-                  </button>
-                </div>
-              </div>
-              {editingSetupLanguagesId === setup.id ? (
-        <div className="app-subpanel grid min-w-0 gap-3 p-3">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <LanguageSelect
-                      label={t("setup.baseLanguage")}
-                      value={editingBaseLanguage}
-                      exclude={[editingTargetLanguage]}
-                      onChange={(value) => {
-                        setEditingBaseLanguage(value);
-                        if (editingTargetLanguage === value) {
-                          setEditingTargetLanguage(firstAvailableLanguage(value));
-                        }
-                      }}
-                    />
-                    <LanguageSelect
-                      label={t("setup.targetLanguage")}
-                      value={editingTargetLanguage}
-                      exclude={[editingBaseLanguage]}
-                      onChange={(value) => {
-                        setEditingTargetLanguage(value);
-                        if (editingBaseLanguage === value) {
-                          setEditingBaseLanguage(firstAvailableLanguage(value));
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button className="app-button app-button-primary" onClick={() => saveSetupLanguages(setup)} data-tooltip={t("common.save")}>
-                      {t("common.save")}
-                    </button>
-                    <button className="app-button app-button-ghost" onClick={() => setEditingSetupLanguagesId(null)} data-tooltip={t("common.cancel")}>
-                      {t("common.cancel")}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="app-panel grid min-w-0 gap-3 p-4">
-        <h2 className="app-heading text-base font-semibold">{t("settings.data")}</h2>
-        <p className="app-muted text-sm">{t("settings.importHelp")}</p>
-        <input
-          ref={backupMergeInputRef}
-          className="hidden"
-          type="file"
-          accept="application/json,.json"
-          onChange={(event) => void importBackup(event, "merge")}
-        />
-        <input
-          ref={backupReplaceInputRef}
-          className="hidden"
-          type="file"
-          accept="application/json,.json"
-          onChange={(event) => void importBackup(event, "replace")}
-        />
-        <input
-          ref={csvImportInputRef}
-          className="hidden"
-          type="file"
-          accept=".csv,text/csv"
-          onChange={(event) => void importCsvWords(event)}
-        />
-        <div className="settings-actions">
-          <button className="app-button app-button-secondary" onClick={() => void exportBackup()} disabled={settingsBusy} data-tooltip={t("settings.exportBackup")}>
-            {localBusy === "exportBackup" ? <LoadingIndicator label={t("settings.exportBackup")} /> : <Download size={18} />}
-            {t("settings.exportBackup")}
-          </button>
-          <button className="app-button app-button-secondary" onClick={() => backupMergeInputRef.current?.click()} disabled={settingsBusy} data-tooltip={t("settings.importBackupMergeHint")}>
-            {localBusy === "importBackupMerge" ? <LoadingIndicator label={t("settings.importBackupMerge")} /> : <Plus size={18} />}
-            {t("settings.importBackupMerge")}
-          </button>
-          <button className="app-button app-button-secondary" onClick={() => backupReplaceInputRef.current?.click()} disabled={settingsBusy} data-tooltip={t("settings.importBackupReplaceHint")}>
-            {localBusy === "importBackupReplace" ? <LoadingIndicator label={t("settings.importBackupReplace")} /> : <RotateCcw size={18} />}
-            {t("settings.importBackupReplace")}
-          </button>
-          <button className="app-button app-button-secondary" onClick={() => csvImportInputRef.current?.click()} disabled={!activeSetup || settingsBusy} data-tooltip={t("settings.importCsvHint")}>
-            {localBusy === "importCsv" ? <LoadingIndicator label={t("settings.importCsv")} /> : <Plus size={18} />}
-            {t("settings.importCsv")}
-          </button>
-          <button
-            className="app-button app-button-secondary"
-            onClick={() => downloadTextFile("lexora-export.csv", createCsvExport(words, decks), "text/csv")}
-            data-tooltip={t("library.exportCsv")}
-          >
-            <Download size={18} />
-            {t("library.exportCsv")}
-          </button>
-          <button className="app-button app-button-danger" onClick={resetData} data-tooltip={t("settings.resetWarning")}>
-            <Trash2 size={18} />
-            {t("settings.resetAll")}
-          </button>
-        </div>
-        <div className="app-muted grid min-w-0 gap-2 text-xs leading-relaxed md:grid-cols-3">
-          <p className="app-subpanel p-2">
-            <span className="app-label font-semibold">{t("settings.importBackupMerge")}:</span> {t("settings.importBackupMergeHint")}
-          </p>
-          <p className="app-subpanel p-2">
-            <span className="app-label font-semibold">{t("settings.importBackupReplace")}:</span> {t("settings.importBackupReplaceHint")}
-          </p>
-          <p className="app-subpanel p-2">
-            <span className="app-label font-semibold">{t("settings.importCsv")}:</span> {t("settings.importCsvHint")}
-          </p>
-        </div>
-      </div>
-
-      <div className="app-panel grid min-w-0 gap-3 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="app-heading text-base font-semibold">{t("cloud.title")}</h2>
-            <p className="app-muted mt-1 text-sm">{t("cloud.body")}</p>
-          </div>
-          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${cloudConnected ? "app-success" : "app-warning"}`}>
-            {cloudConnected ? t("cloud.connected") : t("cloud.notConnected")}
-          </span>
-        </div>
-
-        <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-          <Label text={t("cloud.folderPath")}>
-            <input
-              className="app-input"
-              value={cloudFolderPath}
-              onChange={(event) => setCloudFolderPath(event.target.value)}
-              placeholder={defaultCloudBackupFolder}
+            <AppSelect
+              label={t("setup.baseLanguage")}
+              value={setupBaseLanguage}
+              options={languageOptions.filter((option) => option.value !== setupTargetLanguage)}
+              onChange={(value) => setSetupBaseLanguage(value as LanguageCode)}
             />
-          </Label>
-          <div className="flex flex-wrap gap-2">
-            {cloudConnected ? (
-              <button className="app-button app-button-secondary" type="button" onClick={disconnectCloud} disabled={cloudBusy}>
-                {t("cloud.disconnect")}
-              </button>
-            ) : (
-              <button className="app-button app-button-primary" type="button" onClick={() => void connectCloud()} disabled={cloudBusy || !online || !cloudProvider.isConfigured()}>
-                {cloudBusy ? <LoadingIndicator label={t("cloud.connectGoogle")} /> : null}
-                {t("cloud.connectGoogle")}
-              </button>
-            )}
-            <button className="app-button app-button-secondary" type="button" onClick={() => void refreshCloudBackups()} disabled={cloudBusy || !online || !cloudConnected}>
-              {cloudBusy ? <LoadingIndicator label={t("cloud.refresh")} /> : <RotateCcw size={18} />}
-              {t("cloud.refresh")}
+            <Label text={`${t("setup.name")} (${t("common.optional")})`}>
+              <input
+                className="app-input"
+                value={setupName}
+                onChange={(event) => setSetupName(event.target.value)}
+                placeholder={setupNamePlaceholder(setupBaseLanguage, setupTargetLanguage, i18n.language, t)}
+              />
+            </Label>
+            <button className="app-button app-button-primary app-button-large" type="submit">
+              <Plus size={18} />
+              {t("common.create")}
             </button>
+          </form>
+        </Modal>
+      ) : null}
+
+      {editingSetup ? (
+        <Modal title={t("setup.editLanguages")} onClose={() => setEditingSetupLanguagesId(null)}>
+          <div className="grid gap-4">
+            <p className="app-muted text-sm">{learningSetupDisplayName(editingSetup, i18n.language)}</p>
+            <AppSelect
+              label={t("setup.targetLanguage")}
+              value={editingTargetLanguage}
+              options={languageOptions.filter((option) => option.value !== editingBaseLanguage)}
+              onChange={(value) => setEditingTargetLanguage(value as LanguageCode)}
+            />
+            <AppSelect
+              label={t("setup.baseLanguage")}
+              value={editingBaseLanguage}
+              options={languageOptions.filter((option) => option.value !== editingTargetLanguage)}
+              onChange={(value) => setEditingBaseLanguage(value as LanguageCode)}
+            />
+            <div className="flex justify-end gap-2">
+              <button className="app-button app-button-ghost" type="button" onClick={() => setEditingSetupLanguagesId(null)}>
+                {t("common.cancel")}
+              </button>
+              <button className="app-button app-button-primary" type="button" onClick={() => void saveSetupLanguages(editingSetup)}>
+                {t("common.save")}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+
+      <input ref={backupMergeInputRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void importBackup(event, "merge")} />
+      <input ref={backupReplaceInputRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void importBackup(event, "replace")} />
+      <input ref={csvImportInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => void importCsvWords(event)} />
+
+      <SettingsGroup title={t("profile.label")}>
+        <div className="settings-row">
+          <span className="today-avatar settings-avatar" aria-hidden="true">{initials(profile.name)}</span>
+          <span className="settings-row-text">
+            <span className="settings-row-title">{profile.name}</span>
+            <span className="settings-row-hint">{t("profile.count", { count: String(profiles.length) })}</span>
+          </span>
+        </div>
+        {profiles.length > 1 ? (
+          <div className="settings-row">
+            <span className="settings-row-text">
+              <span className="settings-row-title">{t("profile.switch")}</span>
+            </span>
+            <div className="settings-row-control">
+              <AppSelect
+                value={profile.id}
+                ariaLabel={t("profile.switch")}
+                compact
+                options={profiles.map((candidate) => ({ value: candidate.id, label: candidate.name }))}
+                onChange={onSwitchProfile}
+              />
+            </div>
+          </div>
+        ) : null}
+        <button className="settings-row" type="button" aria-haspopup="dialog" onClick={() => setCreatingProfile(true)}>
+          <span className="settings-row-icon" aria-hidden="true"><Plus size={18} /></span>
+          <span className="settings-row-text"><span className="settings-row-title">{t("ui.newProfile")}</span></span>
+          <ChevronRight className="settings-row-chevron" size={18} aria-hidden="true" />
+        </button>
+      </SettingsGroup>
+
+      <SettingsGroup title={t("settings.languages")}>
+        {learningSetups.map((setup) => {
+          const active = setup.id === activeSetup?.id;
+          const wordCount = setupWordCounts[setup.id] ?? 0;
+          const menuOpen = openSetupMenuId === setup.id;
+          return (
+            <div key={setup.id} className="settings-row">
+              <button
+                className="settings-setup-main"
+                type="button"
+                aria-pressed={active}
+                onClick={() => {
+                  if (!active) void onSwitchSetup(setup.id);
+                }}
+              >
+                <FlagIcon code={setup.targetLanguage} />
+                <span className="settings-row-text">
+                  <span className="settings-row-title">{learningSetupDisplayName(setup, i18n.language)}</span>
+                  <span className="settings-row-hint">
+                    {t("setup.baseShort")}: {languageOptionLabel(setup.baseLanguage, i18n.language)} · {t("ui.wordCount", { count: wordCount })}
+                  </span>
+                </span>
+                {active ? (
+                  <span className="settings-active-pill"><Check size={14} strokeWidth={3} aria-hidden="true" />{t("ui.activePair")}</span>
+                ) : null}
+              </button>
+              <div className="deck-menu">
+                <button
+                  className="study-round-button"
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  aria-label={t("ui.deckActions", { name: learningSetupDisplayName(setup, i18n.language) })}
+                  onClick={() => setOpenSetupMenuId(menuOpen ? null : setup.id)}
+                >
+                  <MoreHorizontal size={20} />
+                </button>
+                {menuOpen ? (
+                  <div className="deck-menu-popup" role="menu">
+                    <button type="button" role="menuitem" onClick={() => { setOpenSetupMenuId(null); renameSetup(setup); }}>
+                      <Edit2 size={17} />
+                      {t("common.rename")}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={wordCount > 0}
+                      title={wordCount > 0 ? t("setup.languagesLocked") : undefined}
+                      onClick={() => { setOpenSetupMenuId(null); beginLanguageEdit(setup); }}
+                    >
+                      <Languages size={17} />
+                      {t("setup.editLanguages")}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="app-text-danger"
+                      disabled={learningSetups.length <= 1}
+                      title={learningSetups.length <= 1 ? t("setup.keepOne") : undefined}
+                      onClick={() => { setOpenSetupMenuId(null); void removeSetup(setup); }}
+                    >
+                      <Trash2 size={17} />
+                      {t("common.delete")}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+        <button className="settings-row" type="button" aria-haspopup="dialog" onClick={() => setCreatingSetup(true)}>
+          <span className="settings-row-icon" aria-hidden="true"><Plus size={18} /></span>
+          <span className="settings-row-text"><span className="settings-row-title">{t("ui.newLanguagePair")}</span></span>
+          <ChevronRight className="settings-row-chevron" size={18} aria-hidden="true" />
+        </button>
+      </SettingsGroup>
+
+      <SettingsGroup title={t("settings.preferences")}>
+        <div className="settings-row">
+          <span className="settings-row-text"><span className="settings-row-title">{t("profile.uiLanguage")}</span></span>
+          <div className="settings-row-control">
+            <AppSelect
+              value={profile.uiLanguage}
+              ariaLabel={t("profile.uiLanguage")}
+              compact
+              options={languageOptions}
+              onChange={(value) => onUiLanguageChange(value as LanguageCode)}
+            />
           </div>
         </div>
-
-        <label className="app-subpanel flex min-w-0 items-start gap-3 p-3 text-sm">
-          <input
-            className="mt-1"
-            type="checkbox"
-            checked={cloudAutoBackup}
-            onChange={(event) => setCloudAutoBackup(event.target.checked)}
-          />
-          <span>
-            <span className="app-label block font-semibold">{t("cloud.autoBackup")}</span>
-            <span className="app-muted">{t("cloud.autoBackupHint")}</span>
-          </span>
-        </label>
-
-        <div className="settings-actions">
-          <button className="app-button app-button-primary" type="button" onClick={() => void backupToCloud()} disabled={cloudBusy || !online || !cloudProvider.isConfigured()}>
-            {cloudBusy ? <LoadingIndicator label={t("cloud.backupNow")} /> : <Download size={18} />}
-            {t("cloud.backupNow")}
-          </button>
-          {lastCloudBackupAt ? (
-            <div className="app-subpanel flex items-center px-3 py-2 text-sm">
-              {t("cloud.lastBackup", { date: new Date(lastCloudBackupAt).toLocaleString(i18n.language) })}
-            </div>
-          ) : null}
+        <div className="settings-row">
+          <span className="settings-row-text"><span className="settings-row-title">{t("settings.theme")}</span></span>
+          <div className="settings-segmented" role="group" aria-label={t("settings.theme")}>
+            {(["light", "dark"] as const).map((mode) => (
+              <button key={mode} type="button" aria-pressed={theme === mode} onClick={() => onThemeChange(mode)}>
+                {mode === "light" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
+                {t(mode === "light" ? "settings.themeLight" : "settings.themeDark")}
+              </button>
+            ))}
+          </div>
         </div>
+      </SettingsGroup>
 
-        {!cloudProvider.isConfigured() ? <p className="app-danger-surface rounded-lg border px-3 py-2 text-sm">{t("cloud.notConfigured")}</p> : null}
-        {!online ? <p className="app-danger-surface rounded-lg border px-3 py-2 text-sm">{t("cloud.offline")}</p> : null}
+      <SettingsGroup title={t("settings.usage")}>
+        <div className="settings-row settings-usage">
+          <span className="settings-row-text">
+            <span className="settings-row-title">{t("ui.lookupsUsed", { used: translationsUsed, limit: myMemoryDailyLimit })}</span>
+            <span className="settings-usage-meter" aria-hidden="true"><span style={{ width: `${translationPercent}%` }} /></span>
+          </span>
+          <span className={`settings-status-pill ${online ? "settings-status-online" : "settings-status-offline"}`}>
+            {online ? t("connection.online") : t("connection.offline")}
+          </span>
+        </div>
+      </SettingsGroup>
 
-        <div className="app-subpanel overflow-hidden">
-          <div className="app-divider flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-            <span className="app-label text-sm font-semibold">{t("cloud.backups")}</span>
-            <span className="app-subtle inline-flex items-center gap-2 text-xs">
-              {cloudBusy ? <LoadingIndicator label="Loading cloud backups" /> : null}
-              {cloudBackups.length} {t("common.backups")}
+      <SettingsGroup title={t("settings.data")}>
+        <SettingsActionRow
+          icon={<Download size={18} />}
+          title={t("settings.exportBackup")}
+          hint={t("ui.exportBackupHint")}
+          busy={localBusy === "exportBackup"}
+          disabled={settingsBusy}
+          onClick={() => void exportBackup()}
+        />
+        <SettingsActionRow
+          icon={<Upload size={18} />}
+          title={t("settings.importBackupMerge")}
+          hint={t("settings.importBackupMergeHint")}
+          busy={localBusy === "importBackupMerge"}
+          disabled={settingsBusy}
+          onClick={() => backupMergeInputRef.current?.click()}
+        />
+        <SettingsActionRow
+          icon={<RotateCcw size={18} />}
+          title={t("settings.importBackupReplace")}
+          hint={t("settings.importBackupReplaceHint")}
+          busy={localBusy === "importBackupReplace"}
+          disabled={settingsBusy}
+          onClick={() => backupReplaceInputRef.current?.click()}
+        />
+        <SettingsActionRow
+          icon={<FileUp size={18} />}
+          title={t("settings.importCsv")}
+          hint={t("settings.importCsvHint")}
+          busy={localBusy === "importCsv"}
+          disabled={!activeSetup || settingsBusy}
+          onClick={() => csvImportInputRef.current?.click()}
+        />
+        <SettingsActionRow
+          icon={<FileDown size={18} />}
+          title={t("library.exportCsv")}
+          hint={t("ui.exportCsvHint")}
+          onClick={() => downloadTextFile("lexora-export.csv", createCsvExport(words, decks), "text/csv")}
+        />
+      </SettingsGroup>
+
+      <SettingsGroup title={t("cloud.title")}>
+        {!cloudProvider.isConfigured() ? (
+          <div className="settings-row">
+            <span className="settings-row-icon" aria-hidden="true"><Cloud size={18} /></span>
+            <span className="settings-row-text">
+              <span className="settings-row-title">{t("cloud.notConnected")}</span>
+              <span className="settings-row-hint">{t("cloud.notConfigured")}</span>
             </span>
           </div>
-          {cloudBackups.length === 0 ? <p className="app-muted p-3 text-sm">{t("cloud.noBackups")}</p> : null}
-          {cloudBackups.map((backup) => (
-            <div key={backup.id} className="app-divider grid gap-2 border-t px-3 py-2.5 first:border-t-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-              <div className="min-w-0">
-                <p className="app-heading truncate text-sm font-semibold">{backup.name}</p>
-                <p className="app-subtle text-xs">{new Date(backup.modifiedTime).toLocaleString(i18n.language)}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button className="app-button app-button-secondary app-button-compact" type="button" onClick={() => void importCloudBackup(backup, "merge")} disabled={cloudBusy || !online}>
-                  {t("settings.importBackupMerge")}
+        ) : (
+          <>
+            <div className="settings-row">
+              <span className="settings-row-icon" aria-hidden="true"><Cloud size={18} /></span>
+              <span className="settings-row-text">
+                <span className="settings-row-title">{cloudConnected ? t("cloud.connected") : t("cloud.notConnected")}</span>
+                <span className="settings-row-hint">
+                  {lastCloudBackupAt ? t("cloud.lastBackup", { date: new Date(lastCloudBackupAt).toLocaleString(i18n.language) }) : t("cloud.body")}
+                </span>
+              </span>
+              {cloudConnected ? (
+                <button className="app-button app-button-secondary" type="button" onClick={disconnectCloud} disabled={cloudBusy}>
+                  {t("cloud.disconnect")}
                 </button>
-                <button className="app-button app-button-secondary app-button-compact" type="button" onClick={() => void importCloudBackup(backup, "replace")} disabled={cloudBusy || !online}>
-                  {t("settings.importBackupReplace")}
+              ) : (
+                <button className="app-button app-button-primary" type="button" onClick={() => void connectCloud()} disabled={cloudBusy || !online}>
+                  {cloudBusy ? <LoadingIndicator label={t("cloud.connectGoogle")} /> : null}
+                  {t("cloud.connectGoogle")}
                 </button>
-                <button
-                  className="app-button app-button-danger app-icon-button"
-                  type="button"
-                  onClick={() => void deleteCloudBackup(backup)}
-                  disabled={cloudBusy || !online}
-                  aria-label={t("cloud.deleteBackup")}
-                  data-tooltip={t("cloud.deleteBackup")}
-                >
-                  <Trash2 size={17} />
-                </button>
-              </div>
+              )}
             </div>
-          ))}
-        </div>
-      </div>
+            <div className="settings-row settings-row-stack">
+              <Label text={t("cloud.folderPath")}>
+                <input className="app-input" value={cloudFolderPath} onChange={(event) => setCloudFolderPath(event.target.value)} placeholder={defaultCloudBackupFolder} />
+              </Label>
+            </div>
+            <label className="settings-row">
+              <span className="settings-row-text">
+                <span className="settings-row-title">{t("cloud.autoBackup")}</span>
+                <span className="settings-row-hint">{t("cloud.autoBackupHint")}</span>
+              </span>
+              <input className="settings-switch" type="checkbox" role="switch" checked={cloudAutoBackup} onChange={(event) => setCloudAutoBackup(event.target.checked)} />
+            </label>
+            <SettingsActionRow
+              icon={<Upload size={18} />}
+              title={t("cloud.backupNow")}
+              busy={cloudBusy}
+              disabled={cloudBusy || !online}
+              onClick={() => void backupToCloud()}
+            />
+            {!online ? <p className="settings-row settings-row-hint">{t("cloud.offline")}</p> : null}
+            <div className="settings-row settings-row-stack">
+              <div className="flex items-center justify-between gap-2">
+                <span className="settings-row-title">{t("cloud.backups")}</span>
+                <button className="text-button" type="button" onClick={() => void refreshCloudBackups()} disabled={cloudBusy || !online || !cloudConnected}>
+                  <RotateCcw size={16} />
+                  {t("cloud.refresh")}
+                </button>
+              </div>
+              {cloudBackups.length === 0 ? <p className="settings-row-hint">{t("cloud.noBackups")}</p> : null}
+              {cloudBackups.map((backup) => (
+                <div key={backup.id} className="settings-cloud-backup">
+                  <span className="min-w-0">
+                    <span className="settings-row-title block truncate">{backup.name}</span>
+                    <span className="settings-row-hint">{new Date(backup.modifiedTime).toLocaleString(i18n.language)}</span>
+                  </span>
+                  <span className="flex flex-wrap gap-2">
+                    <button className="app-button app-button-secondary app-button-compact" type="button" onClick={() => void importCloudBackup(backup, "merge")} disabled={cloudBusy || !online}>
+                      {t("settings.importBackupMerge")}
+                    </button>
+                    <button className="app-button app-button-secondary app-button-compact" type="button" onClick={() => void importCloudBackup(backup, "replace")} disabled={cloudBusy || !online}>
+                      {t("settings.importBackupReplace")}
+                    </button>
+                    <button className="app-button app-button-ghost app-icon-button app-text-danger" type="button" onClick={() => void deleteCloudBackup(backup)} disabled={cloudBusy || !online} aria-label={t("cloud.deleteBackup")}>
+                      <Trash2 size={17} />
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </SettingsGroup>
 
-      <div className="app-warning rounded-xl border p-4">
-        <h2 className="text-base font-semibold">{t("settings.usage")}</h2>
-        <p className="mt-1 text-sm">
-          {usage?.count ?? 0} / {myMemoryDailyLimit} {t("common.today")}
-        </p>
+      <div className="settings-card">
+        <button className="settings-row settings-danger" type="button" onClick={resetData}>
+          <span className="settings-row-icon" aria-hidden="true"><Trash2 size={18} /></span>
+          <span className="settings-row-text">
+            <span className="settings-row-title">{t("settings.resetAll")}</span>
+            <span className="settings-row-hint">{t("settings.resetWarning")}</span>
+          </span>
+        </button>
       </div>
     </section>
+  );
+}
+
+function SettingsGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  const id = useId();
+  return (
+    <section className="settings-group" aria-labelledby={id}>
+      <h2 id={id} className="section-label">{title}</h2>
+      <div className="settings-card">{children}</div>
+    </section>
+  );
+}
+
+function SettingsActionRow({ icon, title, hint, busy = false, disabled = false, onClick }: {
+  icon: React.ReactNode;
+  title: string;
+  hint?: string;
+  busy?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button className="settings-row" type="button" onClick={onClick} disabled={disabled}>
+      <span className="settings-row-icon" aria-hidden="true">{busy ? <LoadingIndicator label={title} /> : icon}</span>
+      <span className="settings-row-text">
+        <span className="settings-row-title">{title}</span>
+        {hint ? <span className="settings-row-hint">{hint}</span> : null}
+      </span>
+      <ChevronRight className="settings-row-chevron" size={18} aria-hidden="true" />
+    </button>
   );
 }
 
@@ -3489,6 +3823,43 @@ function RenameModal({
     </div>
   );
 }
+
+type ScheduleResult = { ok: true; scheduled: Partial<CardState> } | { ok: false };
+
+/** The latest review time saved for a card, from its scheduler state or the card record. */
+function lastSavedReview(card: CardState): number | undefined {
+  const times = [card.fsrsCard?.last_review, card.lastReviewedAt]
+    .map((value) => (typeof value === "string" || typeof value === "number" ? new Date(value).getTime() : Number.NaN))
+    .filter(Number.isFinite);
+  return times.length > 0 ? Math.max(...times) : undefined;
+}
+
+/**
+ * Schedules a review without ever discarding the card's saved history.
+ *
+ * If the device clock is behind the card's last review (a clock or time-zone change, or a backup
+ * from another device), the review is placed at that last review instead of before it, which the
+ * scheduler would reject as negative elapsed time. Any other failure returns `ok: false` and the
+ * caller saves nothing, so the stored card stays exactly as it was.
+ */
+function scheduleWithSavedHistory(
+  card: CardState,
+  rating: ReviewRating,
+  now = new Date(),
+  { logFailure = true }: { logFailure?: boolean } = {}
+): ScheduleResult {
+  const lastReview = lastSavedReview(card);
+  const reviewedAt = lastReview !== undefined && lastReview > now.getTime() ? new Date(lastReview) : now;
+  try {
+    return { ok: true, scheduled: scheduleReview(card, rating, reviewedAt) };
+  } catch (error) {
+    if (logFailure) console.error("Could not schedule review for card", card.id, error);
+    return { ok: false };
+  }
+}
+
+/** How many decks the Today screen lists before "See all". */
+const todayDeckLimit = 4;
 
 /** Number of deck colour tones defined in index.css (.deck-tone-0 …). */
 const deckToneCount = 4;

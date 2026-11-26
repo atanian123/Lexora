@@ -2090,6 +2090,7 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
 
 .today-grid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.875rem;
 }
 
@@ -2170,6 +2171,18 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
   color: #ffffff;
 }
 
+.review-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.review-card-top > :first-child {
+  min-width: 0;
+}
+
 .review-card-label {
   color: var(--review-card-muted);
   font-size: 0.875rem;
@@ -2178,7 +2191,7 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
 
 .review-card-count {
   font-family: var(--display-font);
-  font-size: 3.5rem;
+  font-size: clamp(2.75rem, 14vw, 3.5rem);
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.03em;
@@ -2200,14 +2213,30 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
   background: transparent;
   color: var(--review-card-muted);
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
 }
 
 .review-direction button[aria-pressed="true"] {
   background: #ffffff;
   color: var(--review-card-deep);
-  font-weight: 700;
+}
+
+/* On phones the direction toggle gets its own row, so switching direction never reflows the card. */
+@media (max-width: 639px) {
+  .review-card-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .review-direction {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .review-direction button {
+    min-height: 2.75rem;
+  }
 }
 
 .review-card-start {
@@ -3222,4 +3251,400 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
   cursor: default;
   background: var(--bg-base);
   color: var(--text-muted);
+}
+
+/* One-column grids must not grow to fit wide content (long numbers, words, deck names):
+   an implicit `auto` column takes the content's min-content width and pushes the page
+   off screen. Layered as base, so any explicit column template still wins. */
+@layer base {
+  .grid,
+  .library-tools,
+  .word-list,
+  .deck-card-grid,
+  .deck-card,
+  .forecast-card,
+  .review-card,
+  .today-empty,
+  .study-result,
+  .study-solution,
+  .study-continue,
+  .study-stat,
+  .rating-sheet,
+  .app-task-dialog-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Dropdowns: a visible outline and a downward chevron, so they read as selectable. */
+.app-input.app-select-trigger {
+  border-color: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  background: var(--surface-card);
+  color: var(--text-heading);
+  font-weight: 600;
+}
+
+.app-input.app-select-trigger:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.app-input.app-select-trigger[aria-expanded="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.app-select-chevron {
+  color: var(--text-muted);
+}
+
+.dropdown-panel {
+  border: 1px solid color-mix(in srgb, var(--text-muted) 35%, transparent);
+}
+
+/* After an answer: one Continue button; the ratings only appear on request. */
+.study-continue {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: auto;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* While typing on a phone the keyboard takes about half the screen: shrink the prompt card
+   so the word, the answer field and the accent keys all stay visible above it. */
+@media (max-width: 639px) {
+  .study-session:has(.study-answer-input:focus) {
+    min-height: auto;
+    gap: 0.6rem;
+  }
+
+  .study-session:has(.study-answer-input:focus) .study-prompt-card {
+    min-height: 0;
+    gap: 0.5rem;
+    padding: 2.6rem 1rem 0.9rem;
+  }
+
+  .study-session:has(.study-answer-input:focus) .study-prompt {
+    font-size: clamp(1.6rem, 7.5vw, 2.1rem);
+  }
+
+  .study-session:has(.study-answer-input:focus) .study-speak {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .study-session:has(.study-answer-input:focus) .study-answer {
+    gap: 0.5rem;
+  }
+
+  .study-session:has(.study-answer-input:focus) .accent-key {
+    min-height: 2.5rem;
+  }
+
+  .study-session:has(.study-answer-input:focus) .study-answer-actions {
+    margin-top: 0;
+    padding-top: 0;
+  }
+
+  /* The bottom bar would otherwise ride up on top of the keyboard. */
+  body:has(.app-main input:focus, .app-main textarea:focus) .mobile-tab-bar {
+    display: none;
+  }
+}
+
+/* Status chips wrap instead of scrolling; decks are chosen from one dropdown. */
+.filter-chips {
+  flex-wrap: wrap;
+  margin-inline: 0;
+  padding-inline: 0;
+  overflow: visible;
+}
+
+.filter-deck {
+  flex: 1 1 11rem;
+  min-width: 0;
+}
+
+/* Today lists a few decks in a grid; the Decks tab shows them all. */
+.deck-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-inline: 0;
+  padding: 0;
+  overflow: visible;
+}
+
+@media (min-width: 900px) {
+  .deck-tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.deck-tile {
+  width: auto;
+  min-width: 0;
+}
+
+/* Bottom sheets follow the area left above an on-screen keyboard. */
+@media (max-width: 639px) {
+  .app-task-dialog {
+    max-height: calc(var(--visual-height, 100dvh) - 1rem);
+    margin-bottom: var(--keyboard-inset, 0px);
+  }
+
+  .app-task-dialog:has(input:focus, textarea:focus) .app-task-dialog-grabber {
+    display: none;
+  }
+}
+
+/* Settings: grouped lists, like a phone's own settings. */
+.settings {
+  max-width: 44rem;
+}
+
+.settings-group {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.settings-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border: 1px solid var(--surface-card-border);
+  border-radius: 20px;
+  background: var(--surface-card);
+}
+
+.settings-card > * + * {
+  border-top: 1px solid var(--surface-card-border);
+}
+
+.settings-card > :first-child {
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+}
+
+.settings-card > :last-child {
+  border-bottom-left-radius: inherit;
+  border-bottom-right-radius: inherit;
+}
+
+.settings-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 3.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  border: 0;
+  background: transparent;
+  color: var(--text-heading);
+  font: inherit;
+  text-align: left;
+}
+
+button.settings-row,
+label.settings-row {
+  cursor: pointer;
+}
+
+button.settings-row:hover:not(:disabled) {
+  background: var(--bg-base);
+}
+
+button.settings-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.settings-row-stack {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.settings-row-text {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.15rem;
+}
+
+.settings-row-title {
+  overflow: hidden;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  color: var(--text-heading);
+}
+
+.settings-row-hint {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.settings-row-icon {
+  display: inline-flex;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--new-bg);
+  color: var(--accent);
+}
+
+.settings-row-chevron {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.settings-row-control {
+  width: min(13rem, 52%);
+  flex: none;
+}
+
+.settings-avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.settings-setup-main {
+  display: flex;
+  min-width: 0;
+  min-height: 2.75rem;
+  flex: 1;
+  align-items: center;
+  gap: 0.75rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-setup-main[aria-pressed="true"] {
+  cursor: default;
+}
+
+.settings-active-pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: var(--new-bg);
+  color: var(--new-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.settings-segmented {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--bg-base);
+}
+
+.settings-segmented button {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0 0.8rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-segmented button[aria-pressed="true"] {
+  background: var(--surface-card);
+  color: var(--text-heading);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+}
+
+.settings-usage-meter {
+  display: block;
+  height: 6px;
+  margin-top: 0.35rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--strength-off);
+}
+
+.settings-usage-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.settings-status-pill {
+  flex: none;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.settings-status-online {
+  background: var(--success-surface);
+  color: var(--success-text);
+}
+
+.settings-status-offline {
+  background: var(--due-bg);
+  color: var(--due-text);
+}
+
+.settings-switch {
+  width: 1.4rem;
+  height: 1.4rem;
+  flex: none;
+  accent-color: var(--accent-strong);
+}
+
+.settings-cloud-backup {
+  display: grid;
+  gap: 0.5rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--surface-card-border);
+}
+
+.settings-danger .settings-row-icon {
+  background: var(--due-bg);
+  color: var(--result-wrong);
+}
+
+.settings-danger .settings-row-title {
+  color: var(--result-wrong);
+}
+
+.settings .deck-menu-popup button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.study-error {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--danger-border);
+  border-radius: 16px;
+  background: var(--danger-surface);
+  color: var(--danger-text);
+  font-size: 0.875rem;
+  line-height: 1.45;
 }

@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 interface SelectOption {
@@ -173,7 +173,7 @@ export function AppSelect({
     >
       <button
         ref={trigger}
-        className={`app-input flex min-w-0 items-center justify-between gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60 ${compact ? "app-input-compact min-h-9" : "min-h-10"}`}
+        className={`app-input app-select-trigger flex min-w-0 items-center justify-between gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60 ${compact ? "app-input-compact min-h-9" : "min-h-10"}`}
         type="button"
         disabled={disabled || options.length === 0}
         aria-haspopup="listbox"
@@ -186,7 +186,7 @@ export function AppSelect({
         onKeyDown={handleKeyDown}
       >
         <span id={`${id}-value`} className={textClass}>{selected?.label}</span>
-        <ChevronRight className={`shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} size={compact ? 15 : 16} />
+        <ChevronDown className={`app-select-chevron shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} size={compact ? 16 : 18} aria-hidden="true" />
       </button>
       <div
         ref={menu}
