@@ -27,7 +27,7 @@ import {
   Volume2,
   X
 } from "lucide-react";
-import { type ChangeEvent, type SubmitEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type SubmitEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type CardDirection,
@@ -152,6 +152,7 @@ const cloudAutoBackupStorageKey = "lexora.cloud.autoBackup";
 const defaultCloudBackupFolder = "Lexora/Backups";
 const latestCloudBackupFilename = "lexora-backup-latest.json";
 const libraryPageSize = 40;
+const statusDurationMs = 5_000;
 
 const viewKeys: ViewKey[] = ["study", "library", "decks", "settings"];
 
@@ -187,7 +188,8 @@ export default function App() {
   const [cards, setCards] = useState<CardState[]>([]);
   const [usage, setUsage] = useState<TranslationUsage | null>(null);
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState<{ message: string } | null>(null);
+  const showStatus = useCallback((message: string) => setStatus(message ? { message } : null), []);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [captureRequest, setCaptureRequest] = useState<"word" | "scan" | null>(null);
   const [studyRequest, setStudyRequest] = useState<ScopeSelection | null>(null);
@@ -228,6 +230,14 @@ export default function App() {
   useEffect(() => {
     void refreshAll();
   }, []);
+
+  useEffect(() => {
+    if (!status) return;
+    const timeout = window.setTimeout(() => {
+      setStatus((current) => current === status ? null : current);
+    }, statusDurationMs);
+    return () => window.clearTimeout(timeout);
+  }, [status]);
 
   useEffect(() => {
     // Each tab change is a history entry, so the phone's back button returns to the previous
@@ -393,12 +403,12 @@ export default function App() {
           latestCloudBackupFilename,
           contents
         ))
-        .then(() => setStatus(t("cloud.autoBackupSaved")))
+        .then(() => showStatus(t("cloud.autoBackupSaved")))
         .catch(() => {
           if (!googleDriveProvider.isConnected()) {
             localStorage.removeItem(cloudBackupAuthorizationStorageKey);
           }
-          setStatus(t("cloud.autoBackupSkipped"));
+          showStatus(t("cloud.autoBackupSkipped"));
         });
     }, 2500);
 
@@ -662,7 +672,7 @@ export default function App() {
 
       {status ? (
         <div className="app-status app-status-toast app-glass border-b px-4 py-2 text-center text-sm font-semibold" role="status">
-          {status}
+          {status.message}
         </div>
       ) : null}
 
@@ -679,7 +689,7 @@ export default function App() {
               onStudyRequestHandled={() => setStudyRequest(null)}
               onOpenSwitcher={() => setMobileMenuOpen(true)}
               onOpenDecks={() => navigate("decks")}
-              onStatus={setStatus}
+              onStatus={showStatus}
               onAddWords={() => {
                 setCaptureRequest("word");
                 navigate("library");
@@ -698,7 +708,7 @@ export default function App() {
               captureRequest={captureRequest}
               onCaptureRequestHandled={() => setCaptureRequest(null)}
               onRefresh={refreshAll}
-              onStatus={setStatus}
+              onStatus={showStatus}
             />
           ) : null}
           {view === "decks" && activeSetup ? (
@@ -718,7 +728,7 @@ export default function App() {
                 localStorage.setItem(deckSortStorageKey, sort);
               }}
               onRefresh={refreshAll}
-              onStatus={setStatus}
+              onStatus={showStatus}
             />
           ) : null}
           {view === "settings" ? (
@@ -744,7 +754,7 @@ export default function App() {
                 await refreshAll(activeProfile.id);
               }}
               onRefresh={refreshAll}
-              onStatus={setStatus}
+              onStatus={showStatus}
             />
           ) : null}
         </div>
@@ -1088,6 +1098,11 @@ function StudyView({
     setSession({ ...session, answer: "", revealed: true, match: "wrong", closeAccepted: false, selectedRating: "again" });
   }
 
+  function keepAnswerFocused(event: React.PointerEvent<HTMLButtonElement>) {
+    // Keep the field focused until the click lands so the keyboard and card stay in place.
+    if (event.button === 0 && document.activeElement === answerInputRef.current) event.preventDefault();
+  }
+
   async function rateCurrent(rating: ReviewRating) {
     if (!session?.current || advancingRef.current) {
       return;
@@ -1407,7 +1422,14 @@ function StudyView({
                 </div>
                 <p className="study-prompt" lang={promptLanguage}>{prompt}</p>
                 {speechAvailable ? (
-                  <button className="study-speak" type="button" onClick={() => speak(prompt, promptLanguage)} aria-label={t("ui.playPronunciation")} data-tooltip={t("ui.playPronunciation")}>
+                  <button
+                    className="study-speak"
+                    type="button"
+                    onPointerDown={keepAnswerFocused}
+                    onClick={() => speak(prompt, promptLanguage)}
+                    aria-label={t("ui.playPronunciation")}
+                    data-tooltip={t("ui.playPronunciation")}
+                  >
                     <Volume2 size={22} />
                   </button>
                 ) : null}
@@ -1532,10 +1554,10 @@ function StudyView({
                 </div>
               ) : null}
               <div className="study-answer-actions">
-                <button className="app-button app-button-secondary app-button-large" type="button" onClick={revealUnknownAnswer}>
+                <button className="app-button app-button-secondary app-button-large" type="button" onPointerDown={keepAnswerFocused} onClick={revealUnknownAnswer}>
                   {t("study.dontKnow")}
                 </button>
-                <button className="app-button app-button-primary app-button-large" type="submit" disabled={!session.answer.trim()}>
+                <button className="app-button app-button-primary app-button-large" type="submit" onPointerDown={keepAnswerFocused} disabled={!session.answer.trim()}>
                   <Check size={19} strokeWidth={2.6} />
                   {t("study.submit")}
                 </button>

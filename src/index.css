@@ -2046,6 +2046,7 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
 
   .app-status-toast {
     position: fixed;
+    pointer-events: none;
     inset: auto 0.75rem calc(6rem + env(safe-area-inset-bottom)) 0.75rem;
     z-index: 45;
     border: 1px solid var(--surface-card-border);
