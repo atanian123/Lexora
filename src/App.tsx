@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Download,
   Edit2,
+  EqualApproximately,
   Gauge,
   House,
   Languages,
@@ -107,6 +108,13 @@ import { cloudBackupAuthorizationStorageKey, type CloudBackupFile, createGoogleD
 type ViewKey = "study" | "library" | "decks" | "settings";
 type ThemeMode = "light" | "dark";
 type DeckSort = "newest" | "nameDescending" | "nameAscending";
+
+const studyOutcomes = {
+  correct: { label: "ui.correct", icon: Check },
+  close: { label: "ui.almost", icon: EqualApproximately },
+  wrong: { label: "ui.notQuite", icon: X },
+  revealed: { label: "ui.answerRevealed", icon: BookOpen }
+} as const;
 
 interface WordFormState {
   id?: string;
@@ -1097,7 +1105,7 @@ function StudyView({
       return;
     }
 
-    setSession({ ...session, answer: "", revealed: true, match: "wrong", closeAccepted: false, selectedRating: "again" });
+    setSession({ ...session, answer: "", revealed: true, match: undefined, closeAccepted: false, selectedRating: "again" });
   }
 
   function keepAnswerFocused(event: React.PointerEvent<HTMLButtonElement>) {
@@ -1367,11 +1375,8 @@ function StudyView({
     const answerLanguage = session.current.card.direction === "target-base" ? setup.baseLanguage : setup.targetLanguage;
     const remaining = session.queue.length + 1;
     const total = session.reviewed + remaining;
-    const tone = session.match === "correct" || (session.match === "close" && session.closeAccepted)
-      ? "correct"
-      : session.match === "close"
-        ? "close"
-        : "wrong";
+    const tone = session.match === "close" && session.closeAccepted ? "correct" : (session.match ?? "revealed");
+    const { label: outcomeLabel, icon: OutcomeIcon } = studyOutcomes[tone];
     // After a failed save, Continue retries what the user actually chose.
     const suggested = failedRating ?? session.selectedRating ?? "again";
     const previewTime = new Date();
@@ -1386,10 +1391,11 @@ function StudyView({
     const suggestedInterval = previews.find((preview) => preview.rating === suggested)?.interval;
     // When the answer wasn't exactly right, mark the wrong letters in it and the missing ones in the
     // closest correct answer.
-    const comparedAnswer = session.revealed && session.answer && session.match !== "correct"
-      ? closestAnswer(session.answer, accepted)
+    const solution = session.revealed && session.answer ? closestAnswer(session.answer, accepted) : accepted[0];
+    const answerDiff = session.revealed && session.answer && solution && session.match !== "correct"
+      ? diffAnswer(session.answer.trim(), solution)
       : undefined;
-    const answerDiff = comparedAnswer ? diffAnswer(session.answer.trim(), comparedAnswer) : undefined;
+    const otherAnswers = [...new Set(accepted)].filter((answer) => answer !== solution);
     return (
       <section className={`study-session ${typing && !session.revealed ? "study-session-typing" : ""}`} aria-label={t("study.title")}>
         <div className="study-session-top">
@@ -1441,14 +1447,35 @@ function StudyView({
                   <>
                   <div className="study-result-head">
                     <span className="study-result-icon" aria-hidden="true">
-                      {tone === "wrong" ? <X size={22} strokeWidth={2.6} /> : <Check size={22} strokeWidth={2.6} />}
+                      <OutcomeIcon size={22} strokeWidth={2.5} />
                     </span>
                     <div className="min-w-0">
-                      <p className="study-result-title">
-                        {tone === "correct" ? t("ui.correct") : tone === "close" ? t("ui.almost") : t("ui.notQuite")}
-                      </p>
-                      {session.answer ? null : <p className="app-muted text-sm">{t("ui.noAnswer")}</p>}
+                      <p className="study-result-title">{t(outcomeLabel)}</p>
+                      <p className="study-result-context" lang={promptLanguage}>{prompt}</p>
                     </div>
+                  </div>
+                  <div className="study-solution">
+                    <div className="study-solution-head">
+                      <span className="study-answer-caption">{t("ui.expectedAnswer")}</span>
+                      {speechAvailable && solution ? (
+                        <button className="study-speak study-speak-small" type="button" onClick={() => speak(solution, answerLanguage)} aria-label={t("ui.playPronunciation")} data-tooltip={t("ui.playPronunciation")}>
+                          <Volume2 size={20} />
+                        </button>
+                      ) : null}
+                    </div>
+                    <p className="study-solution-answer" lang={answerLanguage}>
+                      {answerDiff ? answerDiff.correct.map((part, index) => (
+                        <span key={index} className={part.differs ? "diff-missing" : undefined}>{part.text}</span>
+                      )) : solution}
+                    </p>
+                    {otherAnswers.length ? (
+                      <div className="study-other-answers">
+                        <span className="study-answer-caption">{t("ui.otherAnswers")}</span>
+                        <ul lang={answerLanguage}>
+                          {otherAnswers.map((answer) => <li key={answer}>{answer}</li>)}
+                        </ul>
+                      </div>
+                    ) : null}
                   </div>
                   {session.answer && session.match !== "correct" ? (
                     <div className="study-your-answer">
@@ -1462,28 +1489,6 @@ function StudyView({
                       </span>
                     </div>
                   ) : null}
-                  <div className="study-solution">
-                    <span className="app-muted text-sm font-semibold" lang={promptLanguage}>{prompt}</span>
-                    <span className="study-solution-row">
-                      <span className="study-solution-answer" lang={answerLanguage}>
-                        {accepted.map((answer, index) => (
-                          <span key={answer}>
-                            {index > 0 ? " / " : null}
-                            {answerDiff && answer === comparedAnswer
-                              ? answerDiff.correct.map((part, partIndex) => (
-                                  <span key={partIndex} className={part.differs ? "diff-missing" : undefined}>{part.text}</span>
-                                ))
-                              : answer}
-                          </span>
-                        ))}
-                      </span>
-                      {speechAvailable ? (
-                        <button className="study-speak study-speak-small" type="button" onClick={() => speak(accepted[0] ?? "", answerLanguage)} aria-label={t("ui.playPronunciation")} data-tooltip={t("ui.playPronunciation")}>
-                          <Volume2 size={20} />
-                        </button>
-                      ) : null}
-                    </span>
-                  </div>
                   {session.current.word.notes ? (
                     <p className="app-muted text-sm leading-relaxed">
                       <strong className="app-heading">{t("common.notes")}:</strong> {session.current.word.notes}

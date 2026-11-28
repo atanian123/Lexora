@@ -2619,8 +2619,8 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
 
 .study-result {
   display: grid;
-  gap: 1rem;
-  padding: 1.25rem;
+  gap: 0.85rem;
+  padding: clamp(1rem, 4vw, 1.25rem);
   border: 1px solid var(--surface-card-border);
   border-radius: 28px;
   background: var(--surface-card);
@@ -2631,11 +2631,12 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
 .study-result-correct { --result-tone: var(--result-correct); }
 .study-result-close { --result-tone: var(--result-close); }
 .study-result-wrong { --result-tone: var(--result-wrong); }
+.study-result-revealed { --result-tone: var(--info-text); }
 
 .study-result-head {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.7rem;
 }
 
 .study-result-icon {
@@ -2646,8 +2647,8 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: var(--result-tone);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--result-tone) 15%, var(--surface-card));
+  color: var(--result-tone);
 }
 
 .study-result-title {
@@ -2657,15 +2658,25 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
   color: var(--result-tone);
 }
 
-.study-solution {
-  display: grid;
-  gap: 0.35rem;
-  padding: 1rem;
-  border-radius: 18px;
-  background: var(--bg-base);
+.study-result-context {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  overflow-wrap: break-word;
 }
 
-.study-solution-row {
+.study-solution {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.65rem 0.85rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--result-tone) 20%, var(--surface-card-border));
+  border-radius: 21px;
+  background:
+    radial-gradient(ellipse 10rem 7rem at 100% 0%, color-mix(in srgb, var(--result-tone) 18%, transparent), transparent 85%),
+    color-mix(in srgb, var(--result-tone) 7%, var(--surface-card));
+}
+
+.study-solution-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2675,12 +2686,22 @@ body:has(.app-task-dialog[open], .confirm-dialog[open]) {
 .study-solution-answer {
   min-width: 0;
   font-family: var(--display-font);
-  font-size: 1.9rem;
+  font-size: clamp(1.375rem, 7vw, 1.9rem);
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: -0.02em;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   color: var(--text-heading);
+}
+
+.study-other-answers {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--surface-card-border);
+  font-size: 0.9375rem;
+  overflow-wrap: break-word;
 }
 
 .rating-sheet {
@@ -3699,14 +3720,14 @@ button.settings-row:disabled {
   line-height: 1.45;
 }
 
-/* After answering: the learner's own answer, large, with wrong and missing letters marked. */
+/* The learner's answer sits below the solution for comparison. */
 .study-your-answer {
   display: grid;
-  gap: 0.2rem;
-  padding: 0.8rem 1rem;
-  border: 2px solid color-mix(in srgb, var(--result-tone) 45%, transparent);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--result-tone) 8%, var(--surface-card));
+  gap: 0.15rem;
+  padding: 0.55rem 0.85rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--result-tone) 19%, var(--surface-card-border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--result-tone) 4%, var(--surface-card));
 }
 
 .study-answer-caption {
@@ -3719,26 +3740,22 @@ button.settings-row:disabled {
 
 .study-your-answer-text {
   font-family: var(--display-font);
-  font-size: 1.6rem;
+  font-size: 1.25rem;
   font-weight: 700;
   line-height: 1.2;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   color: var(--text-heading);
 }
 
 .diff-wrong {
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--result-wrong) 22%, transparent);
   color: var(--result-wrong);
   text-decoration: line-through;
   text-decoration-thickness: 2px;
 }
 
 .diff-missing {
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--result-correct) 22%, transparent);
-  color: var(--result-correct);
   text-decoration: underline;
+  text-decoration-color: var(--result-correct);
   text-decoration-thickness: 2px;
   text-underline-offset: 4px;
 }
@@ -3812,10 +3829,6 @@ button.settings-row:disabled {
   align-content: start;
   transform: rotateY(180deg);
   animation: none;
-  border-color: color-mix(in srgb, var(--result-tone) 30%, var(--surface-card-border));
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--result-tone) 14%, transparent), transparent 18rem),
-    var(--surface-card);
 }
 
 @media (prefers-reduced-motion: reduce) {

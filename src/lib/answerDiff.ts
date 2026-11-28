@@ -1,4 +1,4 @@
-import { levenshtein } from "./matching";
+import { levenshtein, normalizeAnswer } from "./matching";
 
 export interface DiffPart {
   text: string;
@@ -44,13 +44,13 @@ export function diffAnswer(typed: string, correct: string): { typed: DiffPart[];
   return { typed: toParts(a, keptA), correct: toParts(b, keptB) };
 }
 
-/** The accepted answer closest to what was typed, to compare against. */
+/** The closest accepted answer, using the same normalization as the answer matcher. */
 export function closestAnswer(typed: string, accepted: string[]): string | undefined {
-  const target = typed.trim().toLocaleLowerCase();
+  const target = normalizeAnswer(typed);
   let best: string | undefined;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const answer of accepted) {
-    const distance = levenshtein(target, answer.trim().toLocaleLowerCase());
+    const distance = levenshtein(target, normalizeAnswer(answer));
     if (distance < bestDistance) {
       best = answer;
       bestDistance = distance;
