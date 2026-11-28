@@ -277,18 +277,20 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
             <ol className="scan-list">
               {rows.map((row, index) => {
                 const isSkipped = skipped.has(row.id);
+                const missingTarget = !isSkipped && !row.targetText.trim();
                 const missing = !isSkipped && splitTranslations(row.translations).length === 0;
                 return (
                   <li key={row.id} className={`scan-row ${isSkipped ? "scan-row-skipped" : ""}`}>
                     <span className="scan-row-number" aria-hidden="true">{index + 1}</span>
                     <div className="scan-row-fields">
                       <input
-                        className="scan-row-input scan-row-target"
+                        className={`scan-row-input scan-row-target ${missingTarget ? "scan-row-input-missing" : ""}`}
                         value={row.targetText}
                         disabled={busy}
                         lang={setup.targetLanguage}
                         placeholder={localizedLanguageName(setup.targetLanguage, i18n.language)}
                         aria-label={`${localizedLanguageName(setup.targetLanguage, i18n.language)} ${index + 1}`}
+                        aria-invalid={missingTarget}
                         autoCapitalize="none"
                         autoCorrect="off"
                         spellCheck={false}

@@ -2,7 +2,8 @@ import { createWorker, OEM, PSM, type Worker, type WorkerParams } from "tesserac
 import workerPath from "tesseract.js/dist/worker.min.js?url";
 
 import type { LanguageCode } from "../types";
-import { recognizeVocabularyCards, type RecognizedVocabularyCard } from "./vocabularyCards";
+import { recognizeVocabularyCards } from "./vocabularyCards";
+import { recognizeVocabularyColumns } from "./vocabularyColumns";
 
 const ocrLanguages: Record<LanguageCode, string> = {
   en: "eng",
@@ -22,7 +23,10 @@ export interface ScannedWord {
   translations: string;
 }
 
-type RecognizedVocabulary = string | RecognizedVocabularyCard[];
+type RecognizedVocabulary = string | {
+  layout: "cards" | "columns";
+  pairs: Array<{ first: string; second: string }>;
+};
 
 export async function recognizeVocabulary(
   file: File,
@@ -55,10 +59,10 @@ export async function recognizeVocabulary(
   const abort = () => fail(signal.reason);
   signal.addEventListener("abort", abort, { once: true });
 
-  async function recognize() {
+  async function recognize(): Promise<RecognizedVocabulary> {
     const models = languages.map((language) => ocrLanguages[language]);
     const combinedModel = [...new Set(models)].join("+");
-    const cardModels = translationFirst ? [...models].reverse() : models;
+    const orderedModels = translationFirst ? [...models].reverse() : models;
     let activeModel: string | undefined;
     let pass = 0;
     let totalPasses = 1;
@@ -67,49 +71,55 @@ export async function recognizeVocabulary(
 
     async function recognizeWithModel(image: HTMLCanvasElement, model: string, blocks = false) {
       signal.throwIfAborted();
-      if (!worker) {
-        const engine = await createWorker(model, OEM.LSTM_ONLY, {
-          workerPath,
-          workerBlobURL: false,
-          logger: ({ status, progress }) => {
-            if (finished || status !== "recognizing text") return;
-            const percent = Math.min(99, Math.round((pass + progress) * 100 / totalPasses));
-            if (percent > reportedProgress) {
-              reportedProgress = percent;
-              onProgress(percent);
-            }
-          },
-          errorHandler: (error) => fail(error)
-        });
-        if (finished) {
-          await engine.terminate();
-          throw signal.reason ?? new Error("Text recognition stopped.");
-        }
-        worker = engine;
-      } else if (model !== activeModel) {
-        await worker.reinitialize(model);
-      }
-      activeModel = model;
-      signal.throwIfAborted();
-
-      // Each model may need to download first. Time the OCR pass after it is ready.
       timeout = window.setTimeout(() => fail(new Error("Text recognition timed out.")), 120_000);
       try {
+        if (!worker) {
+          const engine = await createWorker(model, OEM.LSTM_ONLY, {
+            workerPath,
+            workerBlobURL: false,
+            logger: ({ status, progress }) => {
+              if (finished || status !== "recognizing text") return;
+              const percent = Math.min(99, Math.round((pass + progress) * 100 / totalPasses));
+              if (percent > reportedProgress) {
+                reportedProgress = percent;
+                onProgress(percent);
+              }
+            },
+            errorHandler: (error) => fail(error)
+          });
+          if (finished) {
+            await engine.terminate();
+            throw signal.reason ?? new Error("Text recognition stopped.");
+          }
+          worker = engine;
+        } else if (model !== activeModel) {
+          await worker.reinitialize(model);
+        }
+        activeModel = model;
+        signal.throwIfAborted();
         await worker.setParameters(parameters);
-        const { data } = await worker.recognize(image, {}, { text: true, blocks });
+        const { data } = await worker.recognize(image, {}, { text: !blocks, blocks });
         return data;
       } finally {
         window.clearTimeout(timeout);
       }
     }
 
-    const cards = await recognizeVocabularyCards(canvas, cardModels.length > 1, async (sheet, lineIndex) => {
-      // Read each row with its own language model to keep similar accents distinct.
-      pass = lineIndex;
-      totalPasses = cardModels.length > 1 ? 2 : 1;
-      return recognizeWithModel(sheet, cardModels[lineIndex], true);
-    });
-    if (cards) return cards;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Could not read the photo.");
+    const image = context.getImageData(0, 0, canvas.width, canvas.height);
+    const paired = orderedModels.length > 1;
+    const recognizePart = (sheet: HTMLCanvasElement, index: 0 | 1) => {
+      pass = index;
+      totalPasses = paired ? 2 : 1;
+      return recognizeWithModel(sheet, orderedModels[index], true);
+    };
+    const cards = await recognizeVocabularyCards(image, paired, recognizePart);
+    if (cards) return { layout: "cards", pairs: cards };
+    if (paired) {
+      const columns = await recognizeVocabularyColumns(image, recognizePart);
+      if (columns) return { layout: "columns", pairs: columns };
+    }
     pass = 0;
     totalPasses = 1;
     const data = await recognizeWithModel(canvas, combinedModel);
@@ -131,9 +141,10 @@ export async function recognizeVocabulary(
 
 export function parseScannedVocabulary(text: RecognizedVocabulary, mode: ScanMode, translationFirst: boolean): ScannedWord[] {
   if (typeof text !== "string") {
-    return text.map(({ first, second }) => {
+    return text.pairs.map(({ first, second }) => {
       if (mode === "targetOnly") return { targetText: first, translations: "" };
       const [targetText, translations] = translationFirst ? [second, first] : [first, second];
+      if (text.layout === "columns") return { targetText, translations };
       const choices = translations.split(/,\s+/);
       const isWord = (choice: string) => /^[\p{L}\p{M}]+(?:[-'’][\p{L}\p{M}]+)*$/u.test(choice);
       const finalChoice = choices[choices.length - 1].split(" ");

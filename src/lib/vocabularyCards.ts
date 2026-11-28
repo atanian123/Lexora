@@ -12,16 +12,10 @@ interface CardLine {
   right: number;
 }
 
-export interface RecognizedVocabularyCard {
-  first: string;
-  second: string;
-}
-
 type RecognizeSheet = (sheet: HTMLCanvasElement, lineIndex: 0 | 1) => Promise<Page>;
 
-export async function recognizeVocabularyCards(source: HTMLCanvasElement, includeSecondLine: boolean, recognizeSheet: RecognizeSheet) {
-  const sourceContext = source.getContext("2d");
-  const layout = sourceContext && findVocabularyCards(sourceContext.getImageData(0, 0, source.width, source.height));
+export async function recognizeVocabularyCards(source: ImageData, includeSecondLine: boolean, recognizeSheet: RecognizeSheet) {
+  const layout = findVocabularyCards(source);
   if (!layout) return;
 
   const { cards } = layout;
@@ -31,7 +25,7 @@ export async function recognizeVocabularyCards(source: HTMLCanvasElement, includ
     ? await recognizeCardLines(source.width, layout, cards.flatMap(([, second]) => second ? [second] : []), (sheet) => recognizeSheet(sheet, 1))
     : undefined;
 
-  const recognized: RecognizedVocabularyCard[] = cards.map(([first, second]) => ({
+  const recognized = cards.map(([first, second]) => ({
     first: firstText.get(first) ?? "",
     second: second ? secondText?.get(second) ?? "" : ""
   })).filter(({ first, second }) => first || second);
