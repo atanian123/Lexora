@@ -7,7 +7,7 @@ const spanishArticleEndings = { el: "o", la: "a", los: "os", las: "as" } as cons
 type SpanishArticle = keyof typeof spanishArticles;
 type SpanishEnding = keyof typeof spanishEndings;
 
-function slashParts(text: string): string[] {
+export function slashParts(text: string): string[] {
   const parts: string[] = [];
   let start = 0;
   let depth = 0;
@@ -52,14 +52,16 @@ function spanishVariants(parts: string[]): string[] | undefined {
     const alternative = ending ? spanishNounVariant(phrase[2], ending) : phrase[2];
     if (alternative) return [`${first} ${phrase[2]}`, `${phrase[1]} ${alternative}`];
   } else if (ending && terms.length === 1) {
-    const phrase = /^(?:(el|la|los|las)\s+)?([\p{L}\p{M}]+)$/iu.exec(terms[0]);
+    const phrase = /^(?:([\p{L}\p{M}]+(?:\s+[\p{L}\p{M}]+)*)\s+)?([\p{L}\p{M}]+)$/u.exec(terms[0]);
     if (!phrase) return;
-    const article = phrase[1];
+    const context = phrase[1] ?? "";
+    const article = /(?:^|\s)(el|la|los|las)$/i.exec(context)?.[1];
     const opposite = article && spanishArticles[article.toLowerCase() as SpanishArticle];
     if (opposite && spanishArticleEndings[opposite] !== ending) return;
     const alternative = spanishNounVariant(phrase[2], ending);
     if (!alternative) return;
-    return [terms[0], opposite ? `${caseLike(opposite, article)} ${alternative}` : alternative];
+    const prefix = opposite ? context.slice(0, -article.length) + caseLike(opposite, article) : context;
+    return [terms[0], prefix ? `${prefix} ${alternative}` : alternative];
   }
 }
 
@@ -69,6 +71,10 @@ function variants(text: string, language: LanguageCode): string[] {
   if (parts.length < 2) return [text];
   const shorthand = language === "es" && spanishVariants(parts);
   if (shorthand) return shorthand;
+
+  // A slash inside a question marks alternatives within that question, which can share surrounding words.
+  const sentenceTail = /[?!]$/u;
+  if ((/^[¿¡]/u.test(text) || sentenceTail.test(text)) && !parts.every((part) => sentenceTail.test(part))) return [text];
 
   // Require full words or phrases. A suffix, URL or unit such as km/h needs review as written.
   const wholeForm = /^[¿¡]?[\p{L}\p{M}][\p{L}\p{M} .’'-]*(?:\s+\([^()]+\))?[.!?]?$/u;
@@ -82,6 +88,7 @@ export function splitScannedVariants(row: ScannedWord, target: LanguageCode, bas
 
   const translations = variants(row.translations, base);
   return words.map((targetText, index) => ({
+    ...row,
     targetText,
     translations: translations.length === words.length ? translations[index] : row.translations
   }));

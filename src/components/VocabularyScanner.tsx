@@ -7,7 +7,7 @@ import { cardDirections, localizedLanguageName } from "../lib/constants";
 import { createInitialCardState, db } from "../lib/db";
 import { createId, nowIso } from "../lib/ids";
 import { fetchScanTranslation } from "../lib/translation";
-import { normalizeDuplicateText, splitTranslations } from "../lib/vocabulary";
+import { findDuplicateVocabularyRows, normalizeDuplicateText, scanEntryContent, splitTranslations, vocabularyIdentity, type VocabularyIdentity } from "../lib/vocabulary";
 import type { ScanMode, ScannedWord } from "../lib/vocabularyScan";
 import type { Deck, LearningSetup, WordEntry } from "../types";
 import { AppSelect } from "./AppSelect";
@@ -59,7 +59,7 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
   const [translating, setTranslating] = useState<{ current: number; total: number }>();
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [saved, setSaved] = useState<Set<string>>(new Set());
+  const [saved, setSaved] = useState<VocabularyIdentity[]>([]);
   const busy = reading !== null || translating !== undefined || saving;
   const destination = decks.some((deck) => deck.id === deckId) ? deckId : defaultDeckId;
   const targetName = localizedLanguageName(setup.targetLanguage, i18n.language);
@@ -72,30 +72,20 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
     if (!hasRows) return;
     const library = liveQuery(async () => {
       const words = await db.words.where("learningSetupId").equals(setup.id).toArray();
-      return new Set(words.map((word) => normalizeDuplicateText(word.targetText)));
+      return words.map(vocabularyIdentity);
     }).subscribe({
       next: setSaved,
-      error: () => setSaved(new Set())
+      error: () => setSaved([])
     });
     return () => library.unsubscribe();
   }, [hasRows, setup.id]);
 
   // Rows that will be skipped: already saved, or repeating an earlier row in this list.
-  const skipped = useMemo(() => {
-    const result = new Set<string>();
-    const seen = new Set(saved);
-    for (const row of rows ?? []) {
-      const key = normalizeDuplicateText(row.targetText);
-      if (!key) continue;
-      if (seen.has(key)) result.add(row.id);
-      seen.add(key);
-    }
-    return result;
-  }, [rows, saved]);
+  const skipped = useMemo(() => findDuplicateVocabularyRows(rows ?? [], saved), [rows, saved]);
   const importable = (rows?.length ?? 0) - skipped.size;
   // Skipped rows are never imported, so a missing translation there doesn't block the import.
   const incomplete = rows?.some(
-    (row) => !skipped.has(row.id) && (!row.targetText.trim() || splitTranslations(row.translations).length === 0)
+    (row, index) => !skipped.has(index) && (!row.targetText.trim() || splitTranslations(row.translations).length === 0)
   );
 
   useEffect(() => {
@@ -121,12 +111,11 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
     setMessage("");
     let translationStarted = false;
     try {
-      const { recognizeVocabulary, parseScannedVocabulary, splitScannedVariants } = await import("../lib/vocabularyScan");
+      const { recognizeVocabulary, parseScannedVocabulary } = await import("../lib/vocabularyScan");
       signal.throwIfAborted();
       const languages = mode === "paired" ? [setup.targetLanguage, setup.baseLanguage] : [setup.targetLanguage];
       const text = await recognizeVocabulary(file, languages, signal, setReading, translationFirst);
-      const recognized = parseScannedVocabulary(text, mode, translationFirst)
-        .flatMap((row) => splitScannedVariants(row, setup.targetLanguage, setup.baseLanguage))
+      const recognized = parseScannedVocabulary(text, mode, translationFirst, setup)
         .map((row) => ({ ...row, id: createId("scan") }));
       if (recognized.length === 0) {
         setMessage(t("scan.noText"));
@@ -189,34 +178,29 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
 
     setSaving(true);
     setMessage("");
-    let result: { count: number | null; saved: Set<string> };
+    let result: { count: number | null; saved: VocabularyIdentity[] };
     try {
       result = await db.transaction("rw", db.decks, db.words, db.cards, async () => {
         const deck = await db.decks.get(destination);
         if (!deck || deck.learningSetupId !== setup.id) throw new Error("Destination deck is no longer available.");
 
         const existing = await db.words.where("learningSetupId").equals(setup.id).toArray();
-        const saved = new Set(existing.map((word) => normalizeDuplicateText(word.targetText)));
-        const seen = new Set(saved);
+        const saved = existing.map(vocabularyIdentity);
+        const duplicates = findDuplicateVocabularyRows(rows, saved);
         const timestamp = nowIso();
         const additions: WordEntry[] = [];
-        for (const row of rows) {
-          const targetText = row.targetText.trim();
-          const key = normalizeDuplicateText(targetText);
-          if (seen.has(key)) continue;
-          const translations = splitTranslations(row.translations);
+        for (const [index, row] of rows.entries()) {
+          if (duplicates.has(index)) continue;
+          const content = scanEntryContent(row);
           // A row can become importable after its saved duplicate is deleted elsewhere.
-          if (!targetText || !translations.length) return { count: null, saved };
-          seen.add(key);
+          if (!content.targetText || !content.translations.length) return { count: null, saved };
           additions.push({
             id: createId("word"),
             profileId: setup.profileId,
             learningSetupId: setup.id,
             deckId: deck.id,
             deckIds: [deck.id],
-            targetText,
-            translations,
-            notes: "",
+            ...content,
             createdAt: timestamp,
             updatedAt: timestamp
           });
@@ -306,42 +290,65 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
             <p className="app-muted text-sm">{t("scan.reviewHint")}</p>
             <ol className="scan-list">
               {rows.map((row, index) => {
-                const isSkipped = skipped.has(row.id);
+                const isSkipped = skipped.has(index);
                 const missingTarget = !isSkipped && !row.targetText.trim();
                 const missing = !isSkipped && splitTranslations(row.translations).length === 0;
+                const targetClipped = !isSkipped && row.targetClipped;
+                const translationClipped = !isSkipped && row.translationClipped;
+                const cropNoteId = `${row.id}-crop`;
                 return (
                   <li key={row.id} className={`scan-row ${isSkipped ? "scan-row-skipped" : ""}`}>
                     <span className="scan-row-number" aria-hidden="true">{index + 1}</span>
                     <div className="scan-row-fields">
-                      <input
-                        className={`scan-row-input scan-row-target ${missingTarget ? "scan-row-input-missing" : ""}`}
+                      <textarea
+                        className={`scan-row-input scan-row-target ${missingTarget || targetClipped ? "scan-row-input-missing" : ""}`}
                         value={row.targetText}
+                        rows={2}
                         disabled={busy}
                         lang={setup.targetLanguage}
                         placeholder={targetName}
                         aria-label={`${targetName} ${index + 1}`}
                         aria-invalid={missingTarget}
+                        aria-describedby={targetClipped ? cropNoteId : undefined}
                         autoCapitalize="none"
                         autoCorrect="off"
                         spellCheck={false}
-                        onChange={(event) => updateRow(row.id, { targetText: event.target.value })}
+                        onChange={(event) => updateRow(row.id, { targetText: event.target.value, targetClipped: false })}
                       />
                       <div className="scan-row-translation">
                         <ArrowRight size={14} aria-hidden="true" />
-                        <input
-                          className={`scan-row-input ${missing ? "scan-row-input-missing" : ""}`}
+                        <textarea
+                          className={`scan-row-input ${missing || translationClipped ? "scan-row-input-missing" : ""}`}
                           value={row.translations}
+                          rows={2}
                           disabled={busy}
                           lang={setup.baseLanguage}
                           placeholder={t("scan.needsTranslation")}
                           aria-label={`${baseName} ${index + 1}`}
                           aria-invalid={missing}
+                          aria-describedby={translationClipped ? cropNoteId : undefined}
                           autoCapitalize="none"
                           autoCorrect="off"
                           spellCheck={false}
-                          onChange={(event) => updateRow(row.id, { translations: event.target.value })}
+                          onChange={(event) => updateRow(row.id, { translations: event.target.value, translationClipped: false })}
                         />
                       </div>
+                      {targetClipped || translationClipped ? (
+                        <span id={cropNoteId} className="scan-row-note">{t("scan.croppedText")}</span>
+                      ) : null}
+                      {row.notes !== undefined ? (
+                        <label className="scan-row-annotation">
+                          <span>{t("common.notes")}</span>
+                          <textarea
+                            className="scan-row-input"
+                            rows={2}
+                            value={row.notes}
+                            disabled={busy}
+                            aria-label={`${t("common.notes")} ${index + 1}`}
+                            onChange={(event) => updateRow(row.id, { notes: event.target.value })}
+                          />
+                        </label>
+                      ) : null}
                       {isSkipped ? <span className="scan-row-note">{t("scan.alreadySaved")}</span> : null}
                     </div>
                     <button

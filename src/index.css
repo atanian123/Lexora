@@ -3980,9 +3980,14 @@ button.settings-row:disabled {
 
 .scan-row-translation {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.35rem;
   color: var(--text-muted);
+}
+
+.scan-row-translation > svg {
+  flex-shrink: 0;
+  margin-top: 0.7rem;
 }
 
 .scan-row-input {
@@ -3995,8 +4000,17 @@ button.settings-row:disabled {
   background: transparent;
   color: var(--text-body);
   font-size: 1rem;
+  field-sizing: content;
+  overflow-wrap: anywhere;
+  resize: vertical;
   outline: none;
   transition: border-color var(--motion-fast) var(--ease-standard), background-color var(--motion-fast) var(--ease-standard);
+}
+
+@supports (field-sizing: content) {
+  .scan-row-input {
+    resize: none;
+  }
 }
 
 .scan-row-input:hover:not(:disabled) {
@@ -4033,8 +4047,26 @@ button.settings-row:disabled {
   font-weight: 600;
 }
 
+.scan-row-annotation {
+  display: grid;
+  min-width: 0;
+  color: var(--text-muted);
+}
+
+.scan-row-annotation > span {
+  padding-left: 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.scan-row-annotation .scan-row-input {
+  color: inherit;
+  font-size: 0.9375rem;
+}
+
 .scan-row-skipped .scan-row-target,
-.scan-row-skipped .scan-row-translation {
+.scan-row-skipped .scan-row-translation,
+.scan-row-skipped .scan-row-annotation {
   opacity: 0.55;
 }
 

@@ -77,7 +77,7 @@ import {
   parseWordCsv
 } from "./lib/export";
 import { createId, nowIso } from "./lib/ids";
-import { evaluateAnswer, type MatchResult } from "./lib/matching";
+import { acceptedTranslationForms, evaluateAnswer, type MatchResult } from "./lib/matching";
 import { scheduleReview } from "./lib/srs";
 import { fetchTranslationSuggestions, getTodayTranslationUsage } from "./lib/translation";
 import { ConfirmationProvider, useConfirm } from "./components/confirmation";
@@ -86,7 +86,7 @@ import { LanguageBackdrop } from "./components/LanguageBackdrop";
 import { Modal } from "./components/Modal";
 import { FlagIcon, HeaderSelect, Label, NavButton } from "./components/ui";
 import { VocabularyScanner } from "./components/VocabularyScanner";
-import { normalizeDuplicateText, splitTranslations } from "./lib/vocabulary";
+import { splitTranslations, vocabularyIdentitiesMatch, vocabularyIdentity } from "./lib/vocabulary";
 import {
   accentKeys,
   addDays,
@@ -1096,7 +1096,7 @@ function StudyView({
       return;
     }
 
-    const match = evaluateAnswer(session.answer, getAcceptedAnswers(session.current));
+    const match = evaluateAnswer(session.answer, getGradedAnswers(session.current));
     setSession({ ...session, revealed: true, match, selectedRating: defaultRatingForMatch(match, false) });
   }
 
@@ -1391,7 +1391,9 @@ function StudyView({
     const suggestedInterval = previews.find((preview) => preview.rating === suggested)?.interval;
     // When the answer wasn't exactly right, mark the wrong letters in it and the missing ones in the
     // closest correct answer.
-    const solution = session.revealed && session.answer ? closestAnswer(session.answer, accepted) : accepted[0];
+    const solution = session.revealed && session.answer
+      ? closestAnswer(session.answer, session.match === "correct" ? accepted : getGradedAnswers(session.current))
+      : accepted[0];
     const answerDiff = session.revealed && session.answer && solution && session.match !== "correct"
       ? diffAnswer(session.answer.trim(), solution)
       : undefined;
@@ -1817,14 +1819,15 @@ function LibraryView({
   const translationCount = usage?.count ?? 0;
   const translationRemaining = Math.max(0, myMemoryDailyLimit - translationCount);
   const translationQuotaPercent = Math.min(100, Math.round((translationCount / myMemoryDailyLimit) * 100));
+  const wordIdentities = useMemo(() => words.map((word) => ({ word, identity: vocabularyIdentity(word) })), [words]);
   const duplicateWord = useMemo(() => {
-    const candidate = normalizeDuplicateText(form.targetText);
-    if (!candidate) {
+    const candidate = vocabularyIdentity(form);
+    if (!candidate.term) {
       return undefined;
     }
 
-    return words.find((word) => normalizeDuplicateText(word.targetText) === candidate);
-  }, [form.targetText, words]);
+    return wordIdentities.find(({ identity }) => vocabularyIdentitiesMatch(identity, candidate))?.word;
+  }, [form, wordIdentities]);
 
   useEffect(() => {
     if (!decks.some((deck) => deck.id === form.deckId)) {
@@ -1914,13 +1917,13 @@ function LibraryView({
   const editTargetMissing = editFormSubmitted && !editForm.targetText.trim();
   const editTranslationsMissing = editFormSubmitted && splitTranslations(editForm.translations).length === 0;
   const editDuplicateWord = useMemo(() => {
-    const candidate = normalizeDuplicateText(editForm.targetText);
-    if (!candidate || !editingWord) {
+    const candidate = vocabularyIdentity(editForm);
+    if (!candidate.term || !editingWord) {
       return undefined;
     }
 
-    return words.find((word) => word.id !== editingWord.id && normalizeDuplicateText(word.targetText) === candidate);
-  }, [editForm.targetText, editingWord, words]);
+    return wordIdentities.find(({ word, identity }) => word.id !== editingWord.id && vocabularyIdentitiesMatch(identity, candidate))?.word;
+  }, [editForm, editingWord, wordIdentities]);
 
   useEffect(() => {
     setVisibleCount(libraryPageSize);
@@ -4576,6 +4579,11 @@ function getPrompt(studyCard: StudyCard): string {
 
 function getAcceptedAnswers(studyCard: StudyCard): string[] {
   return studyCard.card.direction === "target-base" ? studyCard.word.translations : [studyCard.word.targetText];
+}
+
+function getGradedAnswers(studyCard: StudyCard): string[] {
+  const accepted = getAcceptedAnswers(studyCard);
+  return studyCard.card.direction === "target-base" ? accepted.flatMap(acceptedTranslationForms) : accepted;
 }
 
 function directionLabel(direction: CardDirection, t: (key: string) => string): string {

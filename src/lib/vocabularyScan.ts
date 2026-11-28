@@ -1,11 +1,11 @@
 import { createWorker, OEM, PSM, type Worker, type WorkerParams } from "tesseract.js";
 import workerPath from "tesseract.js/dist/worker.min.js?url";
 
-import type { LanguageCode } from "../types";
+import type { LanguageCode, LearningSetup } from "../types";
+import { slashParts, splitScannedVariants } from "./scannedVariants";
 import { recognizeVocabularyCards } from "./vocabularyCards";
-import { recognizeVocabularyColumns } from "./vocabularyColumns";
-
-export { splitScannedVariants } from "./scannedVariants";
+import { recognizeVocabularyColumns, type RecognizedPair } from "./vocabularyColumns";
+import { extractBracketNotes, findBracketNotes } from "./vocabularyNotes";
 
 const ocrLanguages: Record<LanguageCode, string> = {
   en: "eng",
@@ -23,11 +23,14 @@ export type ScanMode = "targetOnly" | "paired";
 export interface ScannedWord {
   targetText: string;
   translations: string;
+  notes?: string;
+  targetClipped?: boolean;
+  translationClipped?: boolean;
 }
 
 type RecognizedVocabulary = string | {
   layout: "cards" | "columns";
-  pairs: Array<{ first: string; second: string }>;
+  pairs: RecognizedPair[];
 };
 
 export async function recognizeVocabulary(
@@ -69,9 +72,9 @@ export async function recognizeVocabulary(
     let pass = 0;
     let totalPasses = 1;
     let reportedProgress = 0;
-    const parameters: Partial<WorkerParams> = { tessedit_pageseg_mode: PSM.SINGLE_BLOCK, preserve_interword_spaces: "1" };
+    const parameters: Partial<WorkerParams> = { preserve_interword_spaces: "1" };
 
-    async function recognizeWithModel(image: HTMLCanvasElement, model: string, blocks = false) {
+    async function recognizeWithModel(image: HTMLCanvasElement, model: string, blocks = false, mode = PSM.SINGLE_BLOCK) {
       signal.throwIfAborted();
       timeout = window.setTimeout(() => fail(new Error("Text recognition timed out.")), 120_000);
       try {
@@ -99,7 +102,7 @@ export async function recognizeVocabulary(
         }
         activeModel = model;
         signal.throwIfAborted();
-        await worker.setParameters(parameters);
+        await worker.setParameters({ ...parameters, tessedit_pageseg_mode: mode });
         const { data } = await worker.recognize(image, {}, { text: !blocks, blocks });
         return data;
       } finally {
@@ -119,7 +122,13 @@ export async function recognizeVocabulary(
     const cards = await recognizeVocabularyCards(image, paired, recognizePart);
     if (cards) return { layout: "cards", pairs: cards };
     if (paired) {
-      const columns = await recognizeVocabularyColumns(image, recognizePart);
+      const isCyrillic = (model: string) => model === "bul" || model === "rus";
+      const mixedColumn = isCyrillic(orderedModels[0]) === isCyrillic(orderedModels[1])
+        ? undefined : isCyrillic(orderedModels[0]) ? 0 : 1;
+      const columns = await recognizeVocabularyColumns(image, recognizePart, (sheet, index, mixed) => {
+        const model = mixed ? `${orderedModels[index]}+${orderedModels[1 - index]}` : orderedModels[index];
+        return recognizeWithModel(sheet, model, false, PSM.SINGLE_LINE);
+      }, mixedColumn);
       if (columns) return { layout: "columns", pairs: columns };
     }
     pass = 0;
@@ -141,38 +150,84 @@ export async function recognizeVocabulary(
   }
 }
 
-export function parseScannedVocabulary(text: RecognizedVocabulary, mode: ScanMode, translationFirst: boolean): ScannedWord[] {
-  if (typeof text !== "string") {
-    return text.pairs.map(({ first, second }) => {
-      if (mode === "targetOnly") return { targetText: first, translations: "" };
-      const [targetText, translations] = translationFirst ? [second, first] : [first, second];
-      if (text.layout === "columns") return { targetText, translations };
-      const choices = translations.split(/,\s+/);
+function joinWrappedNotes(text: string) {
+  return findBracketNotes(text).reverse().reduce((joined, { start, end }) => {
+    const lines = text.slice(start, end).split(/\r?\n/);
+    // An OCR error can leave a bracket open until a numbered entry several lines later.
+    if (lines.length !== 2 || /^\s*\d+[.)]/u.test(lines[1])) return joined;
+    const note = `${lines[0].trimEnd()} ${lines[1].trimStart()}`;
+    return joined.slice(0, start) + note + joined.slice(end);
+  }, text);
+}
+
+type ScanLanguages = Pick<LearningSetup, "targetLanguage" | "baseLanguage">;
+
+function scopedNotes(value: string, count: number) {
+  const parts = slashParts(value);
+  if (count < 2 || parts.length !== count || !parts.every((part) => /^[¿¡]?\p{L}/u.test(part))) return;
+  return parts.map((part) => extractBracketNotes(part).notes);
+}
+
+export function parseScannedVocabulary(text: RecognizedVocabulary, mode: ScanMode, translationFirst: boolean, languages: ScanLanguages): ScannedWord[] {
+  function buildWords(raw: ScannedWord, compactTranslations = false) {
+    const first = extractBracketNotes(raw.targetText);
+    const second = extractBracketNotes(raw.translations);
+    const row = { ...raw, targetText: first.text, translations: second.text };
+    if (compactTranslations) {
+      const choices = second.text.split(/,\s+/);
       const isWord = (choice: string) => /^[\p{L}\p{M}]+(?:[-'’][\p{L}\p{M}]+)*$/u.test(choice);
       const finalChoice = choices[choices.length - 1].split(" ");
       // In a compact card list, repeated single-word choices can also precede a short phrase.
       // Leave less clearly delimited phrases with their original commas for review.
       const compactList = choices.every(isWord) || (choices.length >= 3 && choices.slice(0, -1).every(isWord) &&
         finalChoice.length <= 3 && finalChoice.every(isWord));
-      return { targetText, translations: compactList ? choices.join("; ") : translations };
+      if (compactList) row.translations = choices.join("; ");
+    }
+    const variants = splitScannedVariants(row, languages.targetLanguage, languages.baseLanguage);
+    const targetNotes = scopedNotes(raw.targetText, variants.length);
+    const translationsSplit = variants.some(({ translations }) => translations !== row.translations);
+    const translationNotes = translationsSplit ? scopedNotes(raw.translations, variants.length) : undefined;
+    return variants.map((variant, index) => {
+      const notes = [...new Set([...(targetNotes?.[index] ?? first.notes), ...(translationNotes?.[index] ?? second.notes)].map(({ text }) => text))];
+      return notes.length ? { ...variant, notes: notes.join("; ") } : variant;
     });
   }
 
-  return text.split(/\r?\n/).flatMap((rawLine) => {
+  if (typeof text !== "string") {
+    return text.pairs.flatMap(({ first, second, firstClipped, secondClipped }) => {
+      if (mode === "targetOnly") return buildWords({ targetText: first, translations: "" });
+      const row: ScannedWord = translationFirst ? { targetText: second, translations: first } : { targetText: first, translations: second };
+      if (translationFirst ? secondClipped : firstClipped) row.targetClipped = true;
+      if (translationFirst ? firstClipped : secondClipped) row.translationClipped = true;
+      return buildWords(row, text.layout === "cards");
+    });
+  }
+
+  // OCR can introduce a line break inside a note, even when there is no bilingual layout to follow.
+  const logicalText = mode === "targetOnly" ? joinWrappedNotes(text) : text;
+  return logicalText.split(/\r?\n/).flatMap((rawLine) => {
     const line = rawLine.trim().replace(/^(?:[•●◦▪*-]|\d+[.)])\s+/, "");
     if (!/\p{L}/u.test(line)) return [];
 
+    // Punctuation inside a workbook note does not separate the word from its translation.
+    const searchLine = findBracketNotes(line).reduce((masked, { start, end }) =>
+      masked.slice(0, start) + "_".repeat(end - start) + masked.slice(end), line);
     if (mode === "targetOnly") {
-      return line.split(/\t+| {3,}/)
-        .filter((term) => /\p{L}/u.test(term))
-        .map((term) => ({ targetText: term.trim(), translations: "" }));
+      let start = 0;
+      const terms = [...searchLine.matchAll(/\t+| {3,}/g)].map((match) => {
+        const term = line.slice(start, match.index);
+        start = match.index + match[0].length;
+        return term;
+      });
+      terms.push(line.slice(start));
+      return terms.filter((term) => /\p{L}/u.test(term)).flatMap((term) => buildWords({ targetText: term.trim(), translations: "" }));
     }
 
-    const separator = /\s*[:：=|—–]\s*|\s+-\s+/.exec(line) ?? /\t+| {3,}/.exec(line) ?? /;/.exec(line);
-    if (!separator) return [{ targetText: line, translations: "" }];
+    const separator = /\s*[:：=|—–]\s*|\s+-\s+/.exec(searchLine) ?? /\t+| {3,}/.exec(searchLine) ?? /;/.exec(searchLine);
+    if (!separator) return buildWords({ targetText: line, translations: "" });
 
     const left = line.slice(0, separator.index).trim();
     const right = line.slice(separator.index + separator[0].length).trim();
-    return [translationFirst ? { targetText: right, translations: left } : { targetText: left, translations: right }];
+    return buildWords(translationFirst ? { targetText: right, translations: left } : { targetText: left, translations: right });
   });
 }

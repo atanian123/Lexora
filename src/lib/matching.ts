@@ -4,6 +4,11 @@ export function normalizeAnswer(value: string): string {
   return value.trim().toLocaleLowerCase().replace(/\s+/g, " ");
 }
 
+export function acceptedTranslationForms(translation: string): string[] {
+  const withoutLabel = translation.trim().replace(/^(?:\([\p{L}\p{M}]{1,10}\.\)|\[[\p{L}\p{M}]{1,10}\.\])\s+/u, "");
+  return withoutLabel && withoutLabel !== translation.trim() ? [translation, withoutLabel] : [translation];
+}
+
 export function evaluateAnswer(answer: string, accepted: string[]): MatchResult {
   const normalizedAnswer = normalizeAnswer(answer);
   const normalizedAccepted = accepted.map(normalizeAnswer).filter(Boolean);
