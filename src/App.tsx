@@ -81,6 +81,7 @@ import { scheduleReview } from "./lib/srs";
 import { fetchTranslationSuggestions, getTodayTranslationUsage } from "./lib/translation";
 import { ConfirmationProvider, useConfirm } from "./components/confirmation";
 import { AppSelect } from "./components/AppSelect";
+import { LanguageBackdrop } from "./components/LanguageBackdrop";
 import { Modal } from "./components/Modal";
 import { FlagIcon, HeaderSelect, Label, NavButton } from "./components/ui";
 import { VocabularyScanner } from "./components/VocabularyScanner";
@@ -520,6 +521,7 @@ export default function App() {
   return (
     <ConfirmationProvider>
     <div className="app-shell">
+      <LanguageBackdrop target={activeSetup.targetLanguage} base={activeSetup.baseLanguage} />
       <header className="app-header app-glass sticky top-0 z-30 hidden border-b sm:block">
         <div className="mx-auto grid max-w-7xl gap-2 px-3 py-2 sm:gap-3 sm:px-6 sm:py-3">
           <div className="desktop-top-row">

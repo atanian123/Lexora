@@ -1,6 +1,6 @@
 import { liveQuery } from "dexie";
-import { ArrowRight, Camera, ImagePlus, Plus, X } from "lucide-react";
-import { type ChangeEvent, type SubmitEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, Camera, ImagePlus, Languages, Plus, X } from "lucide-react";
+import { type ChangeEvent, type ReactNode, type SubmitEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { cardDirections, localizedLanguageName } from "../lib/constants";
@@ -17,6 +17,21 @@ interface ReviewRow extends ScannedWord {
   id: string;
 }
 
+function ScanChoice({ name, value, selected, onSelect, children }: {
+  name: string;
+  value: string;
+  selected: boolean;
+  onSelect: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <label className="scan-choice">
+      <input className="sr-only" type="radio" name={name} value={value} checked={selected} onChange={onSelect} />
+      <span className="scan-choice-tile">{children}</span>
+    </label>
+  );
+}
+
 /**
  * The Scan photo panel of the Add words dialog. The dialog keeps it mounted while it is open,
  * so the photo, reviewed rows, mode and deck survive switching to the Type tab and back.
@@ -30,6 +45,7 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
   onImported: (count: number, duplicates: number) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const optionsId = useId();
   const photoInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const scan = useRef<AbortController | null>(null);
@@ -46,6 +62,8 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const busy = reading !== null || translating !== undefined || saving;
   const destination = decks.some((deck) => deck.id === deckId) ? deckId : defaultDeckId;
+  const targetName = localizedLanguageName(setup.targetLanguage, i18n.language);
+  const baseName = localizedLanguageName(setup.baseLanguage, i18n.language);
 
   useEffect(() => () => scan.current?.abort(), []);
 
@@ -103,11 +121,13 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
     setMessage("");
     let translationStarted = false;
     try {
-      const { recognizeVocabulary, parseScannedVocabulary } = await import("../lib/vocabularyScan");
+      const { recognizeVocabulary, parseScannedVocabulary, splitScannedVariants } = await import("../lib/vocabularyScan");
       signal.throwIfAborted();
       const languages = mode === "paired" ? [setup.targetLanguage, setup.baseLanguage] : [setup.targetLanguage];
       const text = await recognizeVocabulary(file, languages, signal, setReading, translationFirst);
-      const recognized = parseScannedVocabulary(text, mode, translationFirst).map((row) => ({ ...row, id: createId("scan") }));
+      const recognized = parseScannedVocabulary(text, mode, translationFirst)
+        .flatMap((row) => splitScannedVariants(row, setup.targetLanguage, setup.baseLanguage))
+        .map((row) => ({ ...row, id: createId("scan") }));
       if (recognized.length === 0) {
         setMessage(t("scan.noText"));
         return;
@@ -225,24 +245,34 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
   return (
     <>
       <div className="grid gap-3">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <AppSelect
-            label={t("scan.content")}
-            value={mode}
-            disabled={busy}
-            options={(["targetOnly", "paired"] as const).map((value) => ({ value, label: t(`scan.${value}`) }))}
-            onChange={(value) => setMode(value === "paired" ? "paired" : "targetOnly")}
-            wrap
-          />
+        <div className="scan-options">
+          <fieldset className="scan-option-group" disabled={busy}>
+            <legend className="app-label text-sm font-semibold">{t("scan.content")}</legend>
+            <div className="scan-option-list">
+              <ScanChoice name={`${optionsId}-mode`} value="targetOnly" selected={mode === "targetOnly"} onSelect={() => setMode("targetOnly")}>
+                <FlagIcon code={setup.targetLanguage} />
+                <span>{t("scan.targetOnly", { language: targetName })}</span>
+              </ScanChoice>
+              <ScanChoice name={`${optionsId}-mode`} value="paired" selected={mode === "paired"} onSelect={() => setMode("paired")}>
+                <Languages size={19} className="shrink-0" aria-hidden="true" />
+                <span>{t("scan.paired")}</span>
+              </ScanChoice>
+            </div>
+          </fieldset>
           {mode === "paired" ? (
-            <AppSelect
-              label={t("scan.order")}
-              value={translationFirst ? "translationFirst" : "targetFirst"}
-              disabled={busy}
-              options={(["targetFirst", "translationFirst"] as const).map((value) => ({ value, label: t(`scan.${value}`) }))}
-              onChange={(value) => setTranslationFirst(value === "translationFirst")}
-              wrap
-            />
+            <fieldset className="scan-option-group" disabled={busy}>
+              <legend className="app-label text-sm font-semibold">{t("scan.order")}</legend>
+              <div className="scan-option-list">
+                <ScanChoice name={`${optionsId}-order`} value={setup.targetLanguage} selected={!translationFirst} onSelect={() => setTranslationFirst(false)}>
+                  <FlagIcon code={setup.targetLanguage} />
+                  <span>{t("scan.languageFirst", { language: targetName })}</span>
+                </ScanChoice>
+                <ScanChoice name={`${optionsId}-order`} value={setup.baseLanguage} selected={translationFirst} onSelect={() => setTranslationFirst(true)}>
+                  <FlagIcon code={setup.baseLanguage} />
+                  <span>{t("scan.languageFirst", { language: baseName })}</span>
+                </ScanChoice>
+              </div>
+            </fieldset>
           ) : null}
         </div>
         <p className="app-muted text-sm">{t(mode === "paired" ? "scan.pairedHint" : "scan.targetHint")}</p>
@@ -288,8 +318,8 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
                         value={row.targetText}
                         disabled={busy}
                         lang={setup.targetLanguage}
-                        placeholder={localizedLanguageName(setup.targetLanguage, i18n.language)}
-                        aria-label={`${localizedLanguageName(setup.targetLanguage, i18n.language)} ${index + 1}`}
+                        placeholder={targetName}
+                        aria-label={`${targetName} ${index + 1}`}
                         aria-invalid={missingTarget}
                         autoCapitalize="none"
                         autoCorrect="off"
@@ -304,7 +334,7 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
                           disabled={busy}
                           lang={setup.baseLanguage}
                           placeholder={t("scan.needsTranslation")}
-                          aria-label={`${localizedLanguageName(setup.baseLanguage, i18n.language)} ${index + 1}`}
+                          aria-label={`${baseName} ${index + 1}`}
                           aria-invalid={missing}
                           autoCapitalize="none"
                           autoCorrect="off"
@@ -331,6 +361,9 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
               <Plus size={16} /> {t("scan.addRow")}
             </button>
             <div className="scan-import-bar">
+              {incomplete && !busy ? (
+                <p className="scan-import-warning text-sm" role="status">{t("scan.completeRows")}</p>
+              ) : null}
               <AppSelect
                 ariaLabel={t("common.deck")}
                 value={destination}
@@ -340,7 +373,7 @@ export function VocabularyScanner({ setup, decks, defaultDeckId, onRefresh, onSa
                 placement="above"
                 wrap
               />
-              <button className="app-button app-button-primary" type="submit" disabled={busy || importable === 0 || incomplete || !destination}>
+              <button className="app-button app-button-primary scan-import-button" type="submit" disabled={busy || importable === 0 || incomplete || !destination}>
                 {t(saving ? "scan.saving" : "scan.importWords")}
                 {!saving ? <span className="scan-import-count">{importable}</span> : null}
               </button>

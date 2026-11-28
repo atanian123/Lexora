@@ -5,6 +5,8 @@ import type { LanguageCode } from "../types";
 import { recognizeVocabularyCards } from "./vocabularyCards";
 import { recognizeVocabularyColumns } from "./vocabularyColumns";
 
+export { splitScannedVariants } from "./scannedVariants";
+
 const ocrLanguages: Record<LanguageCode, string> = {
   en: "eng",
   de: "deu",
